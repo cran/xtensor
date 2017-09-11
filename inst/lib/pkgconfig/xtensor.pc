@@ -1,0 +1,8 @@
+prefix=/home/sylvain/dev/QuantStack/xtensor-r/build/R-package/inst
+libdir=${prefix}/lib
+includedir=${prefix}/include
+
+Name: xtensor
+Description: xtensor is a C++ library meant for numerical analysis with multi-dimensional array expressions.
+Version: 0.11.0
+Cflags: -I${includedir}
