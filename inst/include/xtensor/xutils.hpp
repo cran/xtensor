@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <complex>
 #include <cstddef>
 #include <initializer_list>
@@ -75,19 +76,16 @@ namespace xt
     template <class T, std::size_t N>
     bool resize_container(std::array<T, N>& a, typename std::array<T, N>::size_type size);
 
-    template <class S>
-    S make_sequence(typename S::size_type size, typename S::value_type v);
+    // gcc 4.9 is affected by C++14 defect CGW 1558
+    // see http://open-std.org/JTC1/SC22/WG21/docs/cwg_defects.html#1558
+    template <class... T>
+    struct make_void
+    {
+        using type = void;
+    };
 
-    template <class R, class A>
-    decltype(auto) forward_sequence(A&& s);
-
-    // equivalent to std::size(c) in c++17
-    template <class C>
-    constexpr auto sequence_size(const C& c) -> decltype(c.size());
-
-    // equivalent to std::size(a) in c++17
-    template <class T, std::size_t N>
-    constexpr std::size_t sequence_size(const T (&a)[N]);
+    template <class... T>
+    using void_t = typename make_void<T...>::type;
 
     /*******************************
      * remove_class implementation *
@@ -440,104 +438,6 @@ namespace xt
         return size == N;
     }
 
-    /********************************
-     * make_sequence implementation *
-     ********************************/
-
-    namespace detail
-    {
-        template <class S>
-        struct sequence_builder
-        {
-            using value_type = typename S::value_type;
-            using size_type = typename S::size_type;
-
-            inline static S make(size_type size, value_type v)
-            {
-                return S(size, v);
-            }
-        };
-
-        template <class T, std::size_t N>
-        struct sequence_builder<std::array<T, N>>
-        {
-            using sequence_type = std::array<T, N>;
-            using value_type = typename sequence_type::value_type;
-            using size_type = typename sequence_type::size_type;
-
-            inline static sequence_type make(size_type /*size*/, value_type v)
-            {
-                sequence_type s;
-                s.fill(v);
-                return s;
-            }
-        };
-    }
-
-    template <class S>
-    inline S make_sequence(typename S::size_type size, typename S::value_type v)
-    {
-        return detail::sequence_builder<S>::make(size, v);
-    }
-
-    /***********************************
-     * forward_sequence implementation *
-     ***********************************/
-
-    namespace detail
-    {
-        template <class R, class A, class E = void>
-        struct sequence_forwarder
-        {
-            template <class T>
-            static inline R forward(const T& r)
-            {
-                return R(std::begin(r), std::end(r));
-            }
-        };
-
-        template <class I, std::size_t L, class A>
-        struct sequence_forwarder<std::array<I, L>, A,
-                                  std::enable_if_t<!std::is_same<std::array<I, L>, A>::value>>
-        {
-            using R = std::array<I, L>;
-
-            template <class T>
-            static inline R forward(const T& r)
-            {
-                R ret;
-                std::copy(std::begin(r), std::end(r), std::begin(ret));
-                return ret;
-            }
-        };
-
-        template <class R>
-        struct sequence_forwarder<R, R>
-        {
-            template <class T>
-            static inline T&& forward(typename std::remove_reference<T>::type& t) noexcept
-            {
-                return static_cast<T&&>(t);
-            }
-
-            template <class T>
-            static inline T&& forward(typename std::remove_reference<T>::type&& t) noexcept
-            {
-                return static_cast<T&&>(t);
-            }
-        };
-    }
-
-    template <class R, class A>
-    inline decltype(auto) forward_sequence(A&& s)
-    {
-        using forwarder = detail::sequence_forwarder<
-            std::decay_t<R>,
-            std::remove_cv_t<std::remove_reference_t<A>>
-        >;
-        return forwarder::template forward<A>(s);
-    }
-
     /*************************************
      * promote_shape and promote_strides *
      *************************************/
@@ -618,67 +518,6 @@ namespace xt
 
     template <class... S>
     using promote_strides_t = typename detail::promote_index<S...>::type;
-
-
-    /**************************
-     * closure implementation *
-     **************************/
-
-    template <class S>
-    struct closure
-    {
-        using underlying_type = std::conditional_t<std::is_const<std::remove_reference_t<S>>::value,
-                                                   const std::decay_t<S>,
-                                                   std::decay_t<S>>;
-        using type = typename std::conditional<std::is_lvalue_reference<S>::value,
-                                               underlying_type&,
-                                               underlying_type>::type;
-    };
-
-    template <class S>
-    using closure_t = typename closure<S>::type;
-
-    template <class S>
-    struct const_closure
-    {
-        using underlying_type = const std::decay_t<S>;
-        using type = typename std::conditional<std::is_lvalue_reference<S>::value,
-                                               underlying_type&,
-                                               underlying_type>::type;
-    };
-
-    template <class S>
-    using const_closure_t = typename const_closure<S>::type;
-
-    /******************************
-     * ptr_closure implementation *
-     ******************************/
-
-    template <class S>
-    struct ptr_closure
-    {
-        using underlying_type = std::conditional_t<std::is_const<std::remove_reference_t<S>>::value,
-                                                   const std::decay_t<S>,
-                                                   std::decay_t<S>>;
-        using type = std::conditional_t<std::is_lvalue_reference<S>::value,
-                                        underlying_type*,
-                                        underlying_type>;
-    };
-
-    template <class S>
-    using ptr_closure_t = typename ptr_closure<S>::type;
-
-    template <class S>
-    struct const_ptr_closure
-    {
-        using underlying_type = const std::decay_t<S>;
-        using type = std::conditional_t<std::is_lvalue_reference<S>::value,
-                                        underlying_type*,
-                                        underlying_type>;
-    };
-
-    template <class S>
-    using const_ptr_closure_t = typename const_ptr_closure<S>::type;
 
     /***************************
      * apply_cv implementation *
@@ -953,28 +792,25 @@ namespace xt
      * static_if *
      *************/
 
-    namespace static_if_detail
+    struct identity_functor
     {
-        struct identity
+        template <class T>
+        T&& operator()(T&& x) const
         {
-            template <class T>
-            T&& operator()(T&& x) const
-            {
-                return std::forward<T>(x);
-            }
-        };
-    }
+            return std::forward<T>(x);
+        }
+    };
 
     template <class TF, class FF>
     auto static_if(std::true_type, const TF& tf, const FF&)
     {
-        return tf(static_if_detail::identity());
+        return tf(identity_functor());
     }
 
     template <class TF, class FF>
     auto static_if(std::false_type, const TF&, const FF& ff)
     {
-        return ff(static_if_detail::identity());
+        return ff(identity_functor());
     }
 
     template <bool cond, class TF, class FF>
@@ -998,6 +834,322 @@ namespace xt
     using xtrivially_default_constructible = std::has_trivial_default_constructor<T>;
 
     #endif
+
+    /*************************
+     * conditional type cast *
+     *************************/
+
+    template <bool condition, class T>
+    struct conditional_cast_functor;
+
+    template <class T>
+    struct conditional_cast_functor<false, T>
+    : public identity_functor
+    {
+    };
+
+    template <class T>
+    struct conditional_cast_functor<true, T>
+    {
+        template <class U>
+        inline auto operator()(U && u) const
+        {
+            return static_cast<T>(std::forward<U>(u));
+        }
+    };
+
+    /** @brief Perform a type cast when a condition is true.
+        If <tt>condition</tt> is true, return <tt>static_cast<T>(u)</tt>,
+        otherwise return <tt>u</tt> unchanged. This is useful when an unconditional
+        static_cast would force undesired type conversions in some situations where
+        an error or warning would be desired. The condition determines when the
+        explicit cast is ok.
+     */
+    template <bool condition, class T, class U>
+    inline auto conditional_cast(U && u)
+    {
+        return conditional_cast_functor<condition, T>()(std::forward<U>(u));
+    };
+
+    /************************************
+     * arithmetic type promotion traits *
+     ************************************/
+
+    /** @brief Traits class for the result type of mixed arithmetic expressions.
+     *   For example, <tt>promote_type<unsigned char, unsigned char>::type</tt> tells
+     *  the user that <tt>unsigned char + unsigned char => int</tt>.
+     */
+    template <class... T>
+    struct promote_type;
+
+    template <class T>
+    struct promote_type<T>
+    {
+        using type = typename promote_type<T, T>::type;
+    };
+
+    template <class T0, class T1>
+    struct promote_type<T0, T1>
+    {
+        using type = decltype(*(std::decay_t<T0>*)0 + *(std::decay_t<T1>*)0);
+    };
+
+    template <class T0, class... REST>
+    struct promote_type<T0, REST...>
+    {
+        using type = decltype(*(std::decay_t<T0>*)0 + *(typename promote_type<REST...>::type*)0);
+    };
+
+    /** @brief Abbreviation of 'typename promote_type<T>::type'.
+        */
+    template <class... T>
+    using promote_type_t = typename promote_type<T...>::type;
+
+    /** @brief Traits class to find the biggest type of the same kind.
+     *   For example, <tt>big_promote_type<unsigned char>::type</tt> is <tt>unsigned long long</tt>.
+     *   The default implementation only supports built-in types and <tt>std::complex</tt>. All
+     *   other types remain unchanged unless <tt>big_promote_type</tt> gets specialized for them.
+     */
+    template <class T>
+    struct big_promote_type
+    {
+      private:
+        using V = std::decay_t<T>;
+        static const bool is_arithmetic = std::is_arithmetic<V>::value;
+        static const bool is_signed = std::is_signed<V>::value;
+        static const bool is_integral = std::is_integral<V>::value;
+        static const bool is_long_double = std::is_same<V, long double>::value;
+
+      public:
+        using type = std::conditional_t<is_arithmetic,
+                        std::conditional_t<is_integral,
+                            std::conditional_t<is_signed, long long, unsigned long long>,
+                            std::conditional_t<is_long_double, long double, double>
+                        >,
+                        V
+                     >;
+    };
+
+    template <class T>
+    struct big_promote_type<std::complex<T>>
+    {
+        using type = std::complex<typename big_promote_type<T>::type>;
+    };
+
+    /** @brief Abbreviation of 'typename big_promote_type<T>::type'.
+     */
+    template <class T>
+    using big_promote_type_t = typename big_promote_type<T>::type;
+
+    namespace traits_detail
+    {
+        using std::sqrt;
+
+        template <class T>
+        using real_promote_type_t = decltype(sqrt(*(std::decay_t<T>*)0));
+    }
+
+    /** @brief Result type of algebraic expressions.
+     *
+     *   For example, <tt>real_promote_type<int>::type</tt> tells the
+     *   user that <tt>sqrt(int) => double</tt>.
+     */
+    template <class T>
+    struct real_promote_type
+    {
+        using type = traits_detail::real_promote_type_t<T>;
+    };
+
+    /** @brief Abbreviation of 'typename real_promote_type<T>::type'.
+        */
+    template <class T>
+    using real_promote_type_t = typename real_promote_type<T>::type;
+
+    /** @brief Traits class to replace 'bool' with 'uint8_t' and keep everything else.
+     *
+     *  This is useful for scientific computing, where a boolean mask array is
+     *  usually implemented as an array of bytes.
+     */
+    template <class T>
+    struct bool_promote_type
+    {
+        using type = typename std::conditional<std::is_same<T, bool>::value, uint8_t, T>::type;
+    };
+
+    /** @brief Abbreviation for typename bool_promote_type<T>::type
+      */
+    template <class T>
+    using bool_promote_type_t = typename bool_promote_type<T>::type;
+
+    /********************************************
+     * type inference for norm and squared norm *
+     ********************************************/
+
+    template <class T>
+    struct norm_type;
+
+    template <class T>
+    struct squared_norm_type;
+
+    namespace traits_detail
+    {
+
+        template <class T, bool scalar = std::is_arithmetic<T>::value>
+        struct norm_of_scalar_impl;
+
+        template <class T>
+        struct norm_of_scalar_impl<T, false>
+        {
+            static const bool value = false;
+            using norm_type = void*;
+            using squared_norm_type = void*;
+        };
+
+        template <class T>
+        struct norm_of_scalar_impl<T, true>
+        {
+            static const bool value = true;
+            using norm_type = promote_type_t<T>;
+            using squared_norm_type = promote_type_t<T>;
+        };
+
+        template <class T, bool integral = std::is_integral<T>::value,
+                  bool floating = std::is_floating_point<T>::value>
+        struct norm_of_array_elements_impl;
+
+        template <>
+        struct norm_of_array_elements_impl<void*, false, false>
+        {
+            using norm_type = void*;
+            using squared_norm_type = void*;
+        };
+
+        template <class T>
+        struct norm_of_array_elements_impl<T, false, false>
+        {
+            using norm_type = typename norm_type<T>::type;
+            using squared_norm_type = typename squared_norm_type<T>::type;
+        };
+
+        template <class T>
+        struct norm_of_array_elements_impl<T, true, false>
+        {
+            static_assert(!std::is_same<T, char>::value,
+                          "'char' is not a numeric type, use 'signed char' or 'unsigned char'.");
+
+            using norm_type = double;
+            using squared_norm_type = uint64_t;
+        };
+
+        template <class T>
+        struct norm_of_array_elements_impl<T, false, true>
+        {
+            using norm_type = double;
+            using squared_norm_type = double;
+        };
+
+        template <>
+        struct norm_of_array_elements_impl<long double, false, true>
+        {
+            using norm_type = long double;
+            using squared_norm_type = long double;
+        };
+
+        template <class ARRAY>
+        struct norm_of_vector_impl
+        {
+            static void* test(...);
+
+            template <class U>
+            static typename U::value_type test(U*, typename U::value_type* = 0);
+
+            using T = decltype(test((ARRAY*)0));
+
+            static const bool value = !std::is_same<T, void*>::value;
+
+            using norm_type = typename norm_of_array_elements_impl<T>::norm_type;
+            using squared_norm_type = typename norm_of_array_elements_impl<T>::squared_norm_type;
+        };
+
+        template <class U>
+        struct norm_type_base
+        {
+            using T = std::decay_t<U>;
+
+            static_assert(!std::is_same<T, char>::value,
+                          "'char' is not a numeric type, use 'signed char' or 'unsigned char'.");
+
+            using norm_of_scalar = norm_of_scalar_impl<T>;
+            using norm_of_vector = norm_of_vector_impl<T>;
+
+            static const bool value = norm_of_scalar::value || norm_of_vector::value;
+
+            static_assert(value, "norm_type<T> are undefined for type U.");
+        };
+    }  // namespace traits_detail
+
+    /** @brief Traits class for the result type of the <tt>norm_l2()</tt> function.
+
+            Member 'type' defines the result of <tt>norm_l2(t)</tt>, where <tt>t</tt>
+            is of type @tparam T. It implements the following rules designed to
+            minimize the potential for overflow:
+                - @tparam T is an arithmetic type: 'type' is the result type of <tt>abs(t)</tt>.
+                - @tparam T is a container of 'long double' elements: 'type' is <tt>long double</tt>.
+                - @tparam T is a container of another arithmetic type: 'type' is <tt>double</tt>.
+                - @tparam T is a container of some other type: 'type' is the element's norm type,
+
+           Containers are recognized by having an embedded typedef 'value_type'.
+           To change the behavior for a case not covered here, specialize the
+           <tt>traits_detail::norm_type_base</tt> template.
+        */
+    template <class T>
+    struct norm_type
+        : public traits_detail::norm_type_base<T>
+    {
+        using base_type = traits_detail::norm_type_base<T>;
+
+        using type =
+            typename std::conditional<base_type::norm_of_vector::value,
+                                      typename base_type::norm_of_vector::norm_type,
+                                      typename base_type::norm_of_scalar::norm_type>::type;
+    };
+
+    /** Abbreviation of 'typename norm_type<T>::type'.
+        */
+    template <class T>
+    using norm_type_t = typename norm_type<T>::type;
+
+    /** @brief Traits class for the result type of the <tt>norm_sq()</tt> function.
+     *
+     * Member 'type' defines the result of <tt>norm_sq(t)</tt>, where <tt>t</tt>
+     * is of type @tparam T. It implements the following rules designed to
+     * minimize the potential for overflow:
+     *   - @tparam T is an arithmetic type: 'type' is the result type of <tt>t*t</tt>.
+     *   - @tparam T is a container of 'long double' elements: 'type' is <tt>long double</tt>.
+     *   - @tparam T is a container of another floating-point type: 'type' is <tt>double</tt>.
+     *   - @tparam T is a container of integer elements: 'type' is <tt>uint64_t</tt>.
+     *   - @tparam T is a container of some other type: 'type' is the element's squared norm type,
+     *
+     *  Containers are recognized by having an embedded typedef 'value_type'.
+     *  To change the behavior for a case not covered here, specialize the
+     *  <tt>traits_detail::norm_type_base</tt> template.
+     */
+    template <class T>
+    struct squared_norm_type
+        : public traits_detail::norm_type_base<T>
+    {
+        using base_type = traits_detail::norm_type_base<T>;
+
+        using type =
+            typename std::conditional<base_type::norm_of_vector::value,
+                                      typename base_type::norm_of_vector::squared_norm_type,
+                                      typename base_type::norm_of_scalar::squared_norm_type>::type;
+    };
+
+    /** Abbreviation of 'typename squared_norm_type<T>::type'.
+     */
+    template <class T>
+    using squared_norm_type_t = typename squared_norm_type<T>::type;
 }
 
 #endif

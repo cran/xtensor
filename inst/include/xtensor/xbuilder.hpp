@@ -14,19 +14,21 @@
 #define XBUILDER_HPP
 
 #include <array>
-#include <cstddef>
 #include <cmath>
+#include <cstddef>
 #include <functional>
 #include <utility>
 #include <vector>
+#ifdef X_OLD_CLANG
+    #include <initializer_list>
+#endif
+
+#include "xtl/xclosure.hpp"
+#include "xtl/xsequence.hpp"
 
 #include "xbroadcast.hpp"
 #include "xfunction.hpp"
 #include "xgenerator.hpp"
-
-#ifdef X_OLD_CLANG
-    #include <initializer_list>
-#endif
 
 namespace xt
 {
@@ -188,8 +190,8 @@ namespace xt
             template <class It>
             inline T operator()(const It& /*begin*/, const It& end) const
             {
-                using value_type = typename std::iterator_traits<It>::value_type;
-                return *(end - 1) == *(end - 2) + value_type(m_k) ? T(1) : T(0);
+                using lvalue_type = typename std::iterator_traits<It>::value_type;
+                return *(end - 1) == *(end - 2) + lvalue_type(m_k) ? T(1) : T(0);
             }
 
         private:
@@ -296,7 +298,7 @@ namespace xt
         public:
 
             using size_type = std::size_t;
-            using value_type = std::common_type_t<typename std::decay_t<CT>::value_type...>;
+            using value_type = promote_type_t<typename std::decay_t<CT>::value_type...>;
 
             inline concatenate_impl(std::tuple<CT...>&& t, size_type axis)
                 : m_t(t), m_axis(axis)
@@ -357,7 +359,7 @@ namespace xt
         public:
 
             using size_type = std::size_t;
-            using value_type = std::common_type_t<typename std::decay_t<CT>::value_type...>;
+            using value_type = promote_type_t<typename std::decay_t<CT>::value_type...>;
 
             inline stack_impl(std::tuple<CT...>&& t, size_type axis)
                 : m_t(t), m_axis(axis)
@@ -437,7 +439,7 @@ namespace xt
     template <class... Types>
     inline auto xtuple(Types&&... args)
     {
-        return std::tuple<const_closure_t<Types>...>(std::forward<Types>(args)...);
+        return std::tuple<xtl::const_closure_type_t<Types>...>(std::forward<Types>(args)...);
     }
 
     /**
@@ -459,7 +461,7 @@ namespace xt
     inline auto concatenate(std::tuple<CT...>&& t, std::size_t axis = 0)
     {
         using shape_type = promote_shape_t<typename std::decay_t<CT>::shape_type...>;
-        shape_type new_shape = forward_sequence<shape_type>(std::get<0>(t).shape());
+        shape_type new_shape = xtl::forward_sequence<shape_type>(std::get<0>(t).shape());
         auto shape_at_axis = [&axis](std::size_t prev, auto& arr) -> std::size_t {
             return prev + arr.shape()[axis];
         };
@@ -510,7 +512,7 @@ namespace xt
     inline auto stack(std::tuple<CT...>&& t, std::size_t axis = 0)
     {
         using shape_type = promote_shape_t<typename std::decay_t<CT>::shape_type...>;
-        auto new_shape = detail::add_axis(forward_sequence<shape_type>(std::get<0>(t).shape()), axis, sizeof...(CT));
+        auto new_shape = detail::add_axis(xtl::forward_sequence<shape_type>(std::get<0>(t).shape()), axis, sizeof...(CT));
         return detail::make_xgenerator(detail::stack_impl<CT...>(std::forward<std::tuple<CT...>>(t), axis), new_shape);
     }
 
@@ -733,19 +735,19 @@ namespace xt
 
     /**
      * @brief Returns the elements on the diagonal of arr
-     * If arr has more than two dimensions, then the axes specified by 
-     * axis_1 and axis_2 are used to determine the 2-D sub-array whose 
-     * diagonal is returned. The shape of the resulting array can be 
-     * determined by removing axis1 and axis2 and appending an index 
+     * If arr has more than two dimensions, then the axes specified by
+     * axis_1 and axis_2 are used to determine the 2-D sub-array whose
+     * diagonal is returned. The shape of the resulting array can be
+     * determined by removing axis1 and axis2 and appending an index
      * to the right equal to the size of the resulting diagonals.
      *
      * @param arr the input array
      * @param offset offset of the diagonal from the main diagonal. Can
      *               be positive or negative.
-     * @param axis_1 Axis to be used as the first axis of the 2-D sub-arrays 
-     *               from which the diagonals should be taken. 
-     * @param axis_2 Axis to be used as the second axis of the 2-D sub-arrays 
-     *               from which the diagonals should be taken. 
+     * @param axis_1 Axis to be used as the first axis of the 2-D sub-arrays
+     *               from which the diagonals should be taken.
+     * @param axis_2 Axis to be used as the second axis of the 2-D sub-arrays
+     *               from which the diagonals should be taken.
      * @returns xexpression with values of the diagonal
      *
      * \code{.cpp}
@@ -766,7 +768,7 @@ namespace xt
 
         // The following shape calculation code is an almost verbatim adaptation of numpy:
         // https://github.com/numpy/numpy/blob/2aabeafb97bea4e1bfa29d946fbf31e1104e7ae0/numpy/core/src/multiarray/item_selection.c#L1799
-        auto ret_shape = make_sequence<shape_type>(dimension - 1, 0);
+        auto ret_shape = xtl::make_sequence<shape_type>(dimension - 1, 0);
         int dim_1 = static_cast<int>(shape[axis_1]);
         int dim_2 = static_cast<int>(shape[axis_2]);
 
@@ -817,7 +819,7 @@ namespace xt
      * @brief Reverse the order of elements in an xexpression along the given axis.
      * Note: A NumPy/Matlab style `flipud(arr)` is equivalent to `xt::flip(arr, 0)`,
      * `fliplr(arr)` to `xt::flip(arr, 1)`.
-     * 
+     *
      * @param arr the input xexpression
      * @param axis the axis along which elements should be reversed
      *

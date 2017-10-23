@@ -15,6 +15,8 @@
 #include <type_traits>
 #include <utility>
 
+#include "xtl/xsequence.hpp"
+
 #include "xexpression.hpp"
 #include "xiterable.hpp"
 #include "xstrides.hpp"
@@ -114,6 +116,8 @@ namespace xt
         reference operator()();
         template <class... Args>
         reference operator()(Args... args);
+        template <class... Args>
+        reference at(Args... args);
         reference operator[](const xindex& index);
         reference operator[](size_type i);
 
@@ -123,6 +127,8 @@ namespace xt
         const_reference operator()() const;
         template <class... Args>
         const_reference operator()(Args... args) const;
+        template <class... Args>
+        const_reference at(Args... args) const;
         const_reference operator[](const xindex& index) const;
         const_reference operator[](size_type i) const;
 
@@ -206,7 +212,7 @@ namespace xt
     inline xstrided_view<CT, S, CD>::xstrided_view(CT e, S&& shape, S&& strides, std::size_t offset) noexcept
         : m_e(e), m_data(m_e.data()), m_shape(std::forward<S>(shape)), m_strides(std::forward<S>(strides)), m_offset(offset)
     {
-        m_backstrides = make_sequence<backstrides_type>(m_shape.size(), 0);
+        m_backstrides = xtl::make_sequence<backstrides_type>(m_shape.size(), 0);
         adapt_strides(m_shape, m_strides, m_backstrides);
     }
 
@@ -214,7 +220,7 @@ namespace xt
     inline xstrided_view<CT, S, CD>::xstrided_view(CT e, CD data, S&& shape, S&& strides, std::size_t offset) noexcept
         : m_e(e), m_data(data), m_shape(std::forward<S>(shape)), m_strides(std::forward<S>(strides)), m_offset(offset)
     {
-        m_backstrides = make_sequence<backstrides_type>(m_shape.size(), 0);
+        m_backstrides = xtl::make_sequence<backstrides_type>(m_shape.size(), 0);
         adapt_strides(m_shape, m_strides, m_backstrides);
     }
     //@}
@@ -366,6 +372,40 @@ namespace xt
         XTENSOR_ASSERT(check_index(shape(), args...));
         size_type index = m_offset + data_offset<size_type>(strides(), static_cast<size_type>(args)...);
         return m_data[index];
+    }
+
+    /**
+     * Returns a reference to the element at the specified position in the expression,
+     * after dimension and bounds checking.
+     * @param args a list of indices specifying the position in the function. Indices
+     * must be unsigned integers, the number of indices should be equal to the number of dimensions
+     * of the expression.
+     * @exception std::out_of_range if the number of argument is greater than the number of dimensions
+     * or if indices are out of bounds.
+     */
+    template <class CT, class S, class CD>
+    template <class... Args>
+    inline auto xstrided_view<CT, S, CD>::at(Args... args) -> reference
+    {
+        check_access(shape(), args...);
+        return this->operator()(args...);
+    }
+
+    /**
+     * Returns a constant reference to the element at the specified position in the expression,
+     * after dimension and bounds checking.
+     * @param args a list of indices specifying the position in the function. Indices
+     * must be unsigned integers, the number of indices should be equal to the number of dimensions
+     * of the expression.
+     * @exception std::out_of_range if the number of argument is greater than the number of dimensions
+     * or if indices are out of bounds.
+     */
+    template <class CT, class S, class CD>
+    template <class... Args>
+    inline auto xstrided_view<CT, S, CD>::at(Args... args) const -> const_reference
+    {
+        check_access(shape(), args...);
+        return this->operator()(args...);
     }
 
     template <class CT, class S, class CD>
@@ -652,7 +692,8 @@ namespace xt
             using value_type = typename xexpression_type::value_type;
             using reference = typename xexpression_type::reference;
 
-            expression_adaptor(CT&& e) : m_e(e)
+            expression_adaptor(CT&& e)
+                : m_e(e)
             {
                 resize_container(m_index, m_e.dimension());
                 m_size = compute_size(m_e.shape());
@@ -664,7 +705,7 @@ namespace xt
                 std::div_t dv{};
                 for (size_type i = 0; i < m_strides.size(); ++i)
                 {
-                    dv = std::div((int) idx, (int) m_strides[i]);
+                    dv = std::div((int)idx, (int)m_strides[i]);
                     idx = static_cast<std::size_t>(dv.rem);
                     m_index[i] = dv.quot;
                 }

@@ -9,11 +9,13 @@
 #ifndef XITERATOR_HPP
 #define XITERATOR_HPP
 
-#include <array>
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <iterator>
 #include <vector>
+
+#include "xtl/xsequence.hpp"
 
 #include "xexception.hpp"
 #include "xlayout.hpp"
@@ -458,7 +460,7 @@ namespace xt
                 index[i] = shape[i] - 1;
                 if (i != 0)
                 {
-                     stepper.reset_back(i);
+                    stepper.reset_back(i);
                 }
             }
         }
@@ -540,7 +542,7 @@ namespace xt
 
     template <class C, bool is_const>
     inline xindexed_stepper<C, is_const>::xindexed_stepper(xexpression_type* e, size_type offset, bool end) noexcept
-        : p_e(e), m_index(make_sequence<index_type>(e->shape().size(), size_type(0))), m_offset(offset)
+        : p_e(e), m_index(xtl::make_sequence<index_type>(e->shape().size(), size_type(0))), m_offset(offset)
     {
         if (end)
         {
@@ -668,12 +670,12 @@ namespace xt
     template <class It, class S, layout_type L>
     inline xiterator<It, S, L>::xiterator(It it, shape_param_type shape, bool reverse)
         : private_base(shape), m_it(it),
-          m_index(reverse ? forward_sequence<index_type, const shape_type&>(this->shape())
-                          : make_sequence<index_type>(this->shape().size(), size_type(0)))
+          m_index(reverse ? xtl::forward_sequence<index_type, const shape_type&>(this->shape())
+                          : xtl::make_sequence<index_type>(this->shape().size(), size_type(0)))
     {
         if (reverse)
         {
-            auto iter_begin = (L == layout_type::row_major)  ? m_index.begin() : m_index.begin() + 1;
+            auto iter_begin = (L == layout_type::row_major) ? m_index.begin() : m_index.begin() + 1;
             auto iter_end = (L == layout_type::row_major) ? m_index.end() - 1 : m_index.end();
             std::transform(iter_begin, iter_end, iter_begin, [](const auto& v) { return v - 1; });
         }

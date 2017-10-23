@@ -15,6 +15,8 @@
 #include <type_traits>
 #include <utility>
 
+#include "xtl/xproxy_wrapper.hpp"
+
 #include "xtensor/xexpression.hpp"
 #include "xtensor/xiterator.hpp"
 #include "xtensor/xsemantic.hpp"
@@ -162,6 +164,10 @@ namespace xt
 
         template <class... Args>
         reference operator()(Args... args);
+
+        template <class... Args>
+        reference at(Args... args);
+
         reference operator[](const xindex& index);
         reference operator[](size_type i);
 
@@ -170,6 +176,10 @@ namespace xt
 
         template <class... Args>
         const_reference operator()(Args... args) const;
+
+        template <class... Args>
+        const_reference at(Args... args) const;
+
         const_reference operator[](const xindex& index) const;
         const_reference operator[](size_type i) const;
 
@@ -297,12 +307,11 @@ namespace xt
     public:
 
         using functor_type = std::decay_t<F>;
-        using value_type = typename functor_type::value_type;
-
         using subiterator_traits = std::iterator_traits<IT>;
 
-        using reference = apply_cv_t<typename subiterator_traits::reference, value_type>;
-        using pointer = std::remove_reference_t<reference>*;
+        using value_type = typename functor_type::value_type;
+        using reference = xtl::xproxy_wrapper<decltype(std::declval<functor_type>()(*(IT())))>;
+        using pointer = xtl::xclosure_pointer<std::remove_reference_t<reference>>;
         using difference_type = typename subiterator_traits::difference_type;
         using iterator_category = typename subiterator_traits::iterator_category;
 
@@ -525,6 +534,23 @@ namespace xt
     }
 
     /**
+     * Returns a reference to the element at the specified position in the expression,
+     * after dimension and bounds checking.
+     * @param args a list of indices specifying the position in the function. Indices
+     * must be unsigned integers, the number of indices should be equal to the number of dimensions
+     * of the expression.
+     * @exception std::out_of_range if the number of argument is greater than the number of dimensions
+     * or if indices are out of bounds.
+     */
+    template <class F, class CT>
+    template <class... Args>
+    inline auto xfunctorview<F, CT>::at(Args... args) -> reference
+    {
+        check_access(shape(), args...);
+        return this->operator()(args...);
+    }
+
+    /**
      * Returns a reference to the element at the specified position in the expression.
      * @param index a sequence of indices specifying the position in the function. Indices
      * must be unsigned integers, the number of indices in the sequence should be equal or greater
@@ -567,6 +593,23 @@ namespace xt
     inline auto xfunctorview<F, CT>::operator()(Args... args) const -> const_reference
     {
         return m_functor(m_e(args...));
+    }
+
+    /**
+     * Returns a constant reference to the element at the specified position in the expression,
+     * after dimension and bounds checking.
+     * @param args a list of indices specifying the position in the function. Indices
+     * must be unsigned integers, the number of indices should be equal to the number of dimensions
+     * of the expression.
+     * @exception std::out_of_range if the number of argument is greater than the number of dimensions
+     * or if indices are out of bounds.
+     */
+    template <class F, class CT>
+    template <class... Args>
+    inline auto xfunctorview<F, CT>::at(Args... args) const -> const_reference
+    {
+        check_access(shape(), args...);
+        return this->operator()(args...);
     }
 
     /**
@@ -1110,14 +1153,13 @@ namespace xt
     template <class F, class IT>
     auto xfunctor_iterator<F, IT>::operator*() const -> reference
     {
-        return (*p_functor)(*m_it);
+        return xtl::proxy_wrapper((*p_functor)(*m_it));
     }
 
     template <class F, class IT>
     auto xfunctor_iterator<F, IT>::operator->() const -> pointer
     {
-        // Returning the address of a temporary
-        return &((*p_functor)(*m_it));
+        return &(operator*());
     }
 
     template <class F, class IT>

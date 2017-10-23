@@ -17,6 +17,8 @@
 #include <type_traits>
 #include <utility>
 
+#include "xtl/xsequence.hpp"
+
 #include "xexpression.hpp"
 #include "xiterable.hpp"
 #include "xstrides.hpp"
@@ -107,6 +109,10 @@ namespace xt
 
         template <class... Args>
         const_reference operator()(Args... args) const;
+
+        template <class... Args>
+        const_reference at(Args... args) const;
+
         const_reference operator[](const xindex& index) const;
         const_reference operator[](size_type i) const;
 
@@ -149,7 +155,7 @@ namespace xt
     {
         using broadcast_type = xbroadcast<const_xclosure_t<E>, S>;
         using shape_type = typename broadcast_type::shape_type;
-        return broadcast_type(std::forward<E>(e), forward_sequence<shape_type>(s));
+        return broadcast_type(std::forward<E>(e), xtl::forward_sequence<shape_type>(s));
     }
 
 #ifdef X_OLD_CLANG
@@ -158,7 +164,7 @@ namespace xt
     {
         using broadcast_type = xbroadcast<const_xclosure_t<E>, std::vector<std::size_t>>;
         using shape_type = typename broadcast_type::shape_type;
-        return broadcast_type(std::forward<E>(e), forward_sequence<shape_type>(s));
+        return broadcast_type(std::forward<E>(e), xtl::forward_sequence<shape_type>(s));
     }
 #else
     template <class E, class I, std::size_t L>
@@ -166,7 +172,7 @@ namespace xt
     {
         using broadcast_type = xbroadcast<const_xclosure_t<E>, std::array<std::size_t, L>>;
         using shape_type = typename broadcast_type::shape_type;
-        return broadcast_type(std::forward<E>(e), forward_sequence<shape_type>(s));
+        return broadcast_type(std::forward<E>(e), xtl::forward_sequence<shape_type>(s));
     }
 #endif
 
@@ -248,6 +254,23 @@ namespace xt
     inline auto xbroadcast<CT, X>::operator()(Args... args) const -> const_reference
     {
         return detail::get_element(m_e, args...);
+    }
+
+    /**
+     * Returns a constant reference to the element at the specified position in the expression,
+     * after dimension and bounds checking.
+     * @param args a list of indices specifying the position in the function. Indices
+     * must be unsigned integers, the number of indices should be equal to the number of dimensions
+     * of the expression.
+     * @exception std::out_of_range if the number of argument is greater than the number of dimensions
+     * or if indices are out of bounds.
+     */
+    template <class CT, class X>
+    template <class... Args>
+    inline auto xbroadcast<CT, X>::at(Args... args) const -> const_reference
+    {
+        check_access(shape(), args...);
+        return this->operator()(args...);
     }
 
     /**

@@ -6,8 +6,8 @@
 * The full license is in the file LICENSE, distributed with this software. *
 ****************************************************************************/
 
-#ifndef XMISSING_HPP
-#define XMISSING_HPP
+#ifndef XTL_OPTIONAL_SEQUENCE_HPP
+#define XTL_OPTIONAL_SEQUENCE_HPP
 
 #include <array>
 #include <cstddef>
@@ -16,16 +16,11 @@
 #include <utility>
 #include <vector>
 
-#include "xarray.hpp"
-#include "xfunctorview.hpp"
 #include "xoptional.hpp"
-#include "xtensor.hpp"
-#include "xtensor_forward.hpp"
-#include "xutils.hpp"
+#include "xsequence.hpp"
 
-namespace xt
+namespace xtl
 {
-
     /**************************************
      * Optimized 1-D xoptional containers *
      **************************************/
@@ -40,6 +35,7 @@ namespace xt
     class xoptional_sequence
     {
     public:
+
         // Internal typedefs
         using inner_types = xoptional_sequence_inner_types<D>;
 
@@ -547,93 +543,6 @@ namespace xt
     {
         return !lhs.equal(rhs);
     }
-
-    /*******************************************************
-     * value() and has_value() xfunctorview implementation *
-     *******************************************************/
-
-    namespace detail
-    {
-        template <class E>
-        struct value_forwarder
-        {
-            // internal types
-            using xexpression_type = std::decay_t<E>;
-            using optional_type = typename xexpression_type::value_type;
-            using optional_reference = typename xexpression_type::reference;
-            using optional_const_reference = typename xexpression_type::const_reference;
-
-            // types
-            using value_type = typename optional_type::value_type;
-            using reference = typename optional_reference::value_closure;
-            using const_reference = typename optional_const_reference::value_closure;
-            using pointer = value_type*;
-            using const_pointer = const value_type*;
-
-            template <class T>
-            decltype(auto) operator()(T&& t) const
-            {
-                return std::forward<T>(t).value();
-            }
-        };
-
-        template <class E>
-        struct flag_forwarder
-        {
-            // internal types
-            using xexpression_type = std::decay_t<E>;
-            using optional_type = typename xexpression_type::value_type;
-            using optional_reference = typename xexpression_type::reference;
-            using optional_const_reference = typename xexpression_type::const_reference;
-
-            // types
-            using value_type = typename optional_type::flag_type;
-            using reference = typename optional_reference::flag_closure;
-            using const_reference = typename optional_const_reference::flag_closure;
-            using pointer = value_type*;
-            using const_pointer = const value_type*;
-
-            template <class T>
-            decltype(auto) operator()(T&& t) const
-            {
-                return std::forward<T>(t).has_value();
-            }
-        };
-    }
-
-    template <class E>
-    auto value(E&& e)
-        -> disable_xoptional<typename std::decay_t<E>::value_type, E>
-    {
-        return std::forward<E>(e);
-    }
-
-    template <class E>
-    auto has_value(E&& e)
-        -> disable_xoptional<typename std::decay_t<E>::value_type, decltype(ones<bool>(std::forward<E>(e).shape()))>
-    {
-        return ones<bool>(std::forward<E>(e).shape());
-    }
-
-    template <class E>
-    auto value(E&& e)
-        -> enable_xoptional<typename std::decay_t<E>::value_type, xfunctorview<detail::value_forwarder<E>, xclosure_t<E>>>
-    {
-        using type = xfunctorview<detail::value_forwarder<E>, xclosure_t<E>>;
-        return type(std::forward<E>(e));
-    }
-
-    template <class E>
-    auto has_value(E&& e)
-        -> enable_xoptional<typename std::decay_t<E>::value_type, xfunctorview<detail::flag_forwarder<E>, xclosure_t<E>>>
-    {
-        using type = xfunctorview<detail::flag_forwarder<E>, xclosure_t<E>>;
-        return type(std::forward<E>(e));
-    }
-
-    /***************************
-     * value_or implementation *
-     ***************************/
 }
 
 #endif

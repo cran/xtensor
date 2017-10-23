@@ -17,10 +17,14 @@
 #include <type_traits>
 #include <utility>
 
+#include "xtl/xsequence.hpp"
+
 #include "xexpression.hpp"
 #include "xiterable.hpp"
 #include "xlayout.hpp"
 #include "xscalar.hpp"
+#include "xstrides.hpp"
+#include "xtensor_simd.hpp"
 #include "xutils.hpp"
 
 namespace xt
@@ -61,7 +65,7 @@ namespace xt
         template <>
         struct common_difference_type<>
         {
-            using type = std::size_t;
+            using type = std::ptrdiff_t;
         };
 
         template <class... Args>
@@ -74,11 +78,25 @@ namespace xt
         template <class... Args>
         struct common_value_type
         {
-            using type = std::common_type_t<xvalue_type_t<Args>...>;
+            using type = promote_type_t<xvalue_type_t<Args>...>;
         };
 
         template <class... Args>
         using common_value_type_t = typename common_value_type<Args...>::type;
+
+        template <class F, class R, class = void_t<>>
+        struct simd_return_type
+        {
+        };
+
+        template <class F, class R>
+        struct simd_return_type<F, R, void_t<decltype(&F::simd_apply)>>
+        {
+            using type = R;
+        };
+
+        template <class F, class R>
+        using simd_return_type_t = typename simd_return_type<F, R>::type;
     }
 
     template <class F, class R, class... CT>
@@ -122,6 +140,7 @@ namespace xt
     public:
 
         using self_type = xfunction<F, R, CT...>;
+        using only_scalar = all_xscalar<CT...>;
         using functor_type = typename std::remove_reference<F>::type;
 
         using value_type = R;
@@ -131,7 +150,7 @@ namespace xt
         using const_pointer = const value_type*;
         using size_type = detail::common_size_type_t<std::decay_t<CT>...>;
         using difference_type = detail::common_difference_type_t<std::decay_t<CT>...>;
-
+        using simd_value_type = xsimd::simd_type<value_type>;
         using iterable_base = xconst_iterable<xfunction<F, R, CT...>>;
         using inner_shape_type = typename iterable_base::inner_shape_type;
         using shape_type = inner_shape_type;
@@ -181,6 +200,9 @@ namespace xt
         template <class... Args>
         const_reference operator()(Args... args) const;
 
+        template <class... Args>
+        const_reference at(Args... args) const;
+
         const_reference operator[](const xindex& index) const;
         const_reference operator[](size_type i) const;
 
@@ -227,6 +249,12 @@ namespace xt
 
         const_reference data_element(size_type i) const;
 
+        template <class UT = self_type, class = typename std::enable_if<UT::only_scalar::value>::type>
+        operator value_type() const;
+
+        template <class align, class simd = simd_value_type>
+        detail::simd_return_type_t<functor_type, simd> load_simd(size_type i) const;
+
     private:
 
         template <std::size_t... I>
@@ -240,6 +268,9 @@ namespace xt
 
         template <std::size_t... I>
         const_reference data_element_impl(std::index_sequence<I...>, size_type i) const;
+
+        template <class align, class simd, std::size_t... I>
+        simd load_simd_impl(std::index_sequence<I...>, size_type i) const;
 
         template <class Func, std::size_t... I>
         const_stepper build_stepper(Func&& f, std::index_sequence<I...>) const noexcept;
@@ -413,7 +444,7 @@ namespace xt
     template <class F, class R, class... CT>
     template <class Func>
     inline xfunction<F, R, CT...>::xfunction(Func&& f, CT... e) noexcept
-        : m_e(e...), m_f(std::forward<Func>(f)), m_shape(make_sequence<shape_type>(0, size_type(1))),
+        : m_e(e...), m_f(std::forward<Func>(f)), m_shape(xtl::make_sequence<shape_type>(0, size_type(1))),
           m_shape_computed(false)
     {
     }
@@ -450,7 +481,7 @@ namespace xt
     {
         if (!m_shape_computed)
         {
-            m_shape = make_sequence<shape_type>(compute_dimension(), size_type(1));
+            m_shape = xtl::make_sequence<shape_type>(compute_dimension(), size_type(1));
             broadcast_shape(m_shape);
             m_shape_computed = true;
         }
@@ -483,6 +514,23 @@ namespace xt
         // The static cast prevents the compiler from instantiating the template methods with signed integers,
         // leading to warning about signed/unsigned conversions in the deeper layers of the access methods
         return access_impl(std::make_index_sequence<sizeof...(CT)>(), static_cast<size_type>(args)...);
+    }
+
+    /**
+     * Returns a constant reference to the element at the specified position in the expression,
+     * after dimension and bounds checking.
+     * @param args a list of indices specifying the position in the function. Indices
+     * must be unsigned integers, the number of indices should be equal to the number of dimensions
+     * of the expression.
+     * @exception std::out_of_range if the number of argument is greater than the number of dimensions
+     * or if indices are out of bounds.
+     */
+    template <class F, class R, class... CT>
+    template <class... Args>
+    inline auto xfunction<F, R, CT...>::at(Args... args) const -> const_reference
+    {
+        check_access(shape(), args...);
+        return this->operator()(args...);
     }
 
     template <class F, class R, class... CT>
@@ -625,6 +673,20 @@ namespace xt
     }
 
     template <class F, class R, class... CT>
+    template <class UT, class>
+    inline xfunction<F, R, CT...>::operator value_type() const
+    {
+        return operator()();
+    }
+
+    template <class F, class R, class... CT>
+    template <class align, class simd>
+    inline auto xfunction<F, R, CT...>::load_simd(size_type i) const -> detail::simd_return_type_t<functor_type, simd>
+    {
+        return load_simd_impl<align, simd>(std::make_index_sequence<sizeof...(CT)>(), i);
+    }
+
+    template <class F, class R, class... CT>
     template <std::size_t... I>
     inline layout_type xfunction<F, R, CT...>::layout_impl(std::index_sequence<I...>) const noexcept
     {
@@ -647,9 +709,16 @@ namespace xt
 
     template <class F, class R, class... CT>
     template <std::size_t... I>
-    inline auto xfunction<F, R, CT...>::data_element_impl(std::index_sequence<I...>, size_type i) const ->const_reference
+    inline auto xfunction<F, R, CT...>::data_element_impl(std::index_sequence<I...>, size_type i) const -> const_reference
     {
         return m_f((std::get<I>(m_e).data_element(i))...);
+    }
+
+    template <class F, class R, class... CT>
+    template <class align, class simd, std::size_t... I>
+    inline auto xfunction<F, R, CT...>::load_simd_impl(std::index_sequence<I...>, size_type i) const -> simd
+    {
+        return m_f.simd_apply((std::get<I>(m_e).template load_simd<align, simd>(i))...);
     }
 
     template <class F, class R, class... CT>
