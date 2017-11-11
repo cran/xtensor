@@ -6,8 +6,8 @@
 * The full license is in the file LICENSE, distributed with this software. *
 ****************************************************************************/
 
-#ifndef XEXCEPTION_HPP
-#define XEXCEPTION_HPP
+#ifndef XTENSOR_EXCEPTION_HPP
+#define XTENSOR_EXCEPTION_HPP
 
 #include <exception>
 #include <iterator>
@@ -71,7 +71,7 @@ namespace xt
     {
     public:
 
-        transpose_error(const std::string& msg);
+        explicit transpose_error(const std::string& msg);
 
         virtual const char* what() const noexcept;
 
@@ -156,7 +156,7 @@ namespace xt
      *******************/
 
     template <class S, class... Args>
-    inline void check_dimension(const S& shape, Args... args)
+    inline void check_dimension(const S& shape, Args...)
     {
         if (sizeof...(Args) > shape.size())
         {

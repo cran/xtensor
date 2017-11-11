@@ -6,8 +6,8 @@
 * The full license is in the file LICENSE, distributed with this software. *
 ****************************************************************************/
 
-#ifndef XBROADCAST_HPP
-#define XBROADCAST_HPP
+#ifndef XTENSOR_BROADCAST_HPP
+#define XTENSOR_BROADCAST_HPP
 
 #include <algorithm>
 #include <array>
@@ -269,7 +269,7 @@ namespace xt
     template <class... Args>
     inline auto xbroadcast<CT, X>::at(Args... args) const -> const_reference
     {
-        check_access(shape(), args...);
+        check_access(shape(), static_cast<size_type>(args)...);
         return this->operator()(args...);
     }
 

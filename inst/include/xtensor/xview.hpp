@@ -6,8 +6,8 @@
 * The full license is in the file LICENSE, distributed with this software. *
 ****************************************************************************/
 
-#ifndef XVIEW_HPP
-#define XVIEW_HPP
+#ifndef XTENSOR_VIEW_HPP
+#define XTENSOR_VIEW_HPP
 
 #include <algorithm>
 #include <array>
@@ -178,8 +178,8 @@ namespace xt
         size_type underlying_size(size_type dim) const;
 
         xtl::xclosure_pointer<self_type&> operator&() &;
-        xtl::xclosure_pointer<const self_type&> operator&() const&;
-        xtl::xclosure_pointer<self_type> operator&() && ;
+        xtl::xclosure_pointer<const self_type&> operator&() const &;
+        xtl::xclosure_pointer<self_type> operator&() &&;
 
     private:
 
@@ -377,7 +377,7 @@ namespace xt
     inline auto xview<CT, S...>::operator=(const xexpression<E>& e) -> self_type&
     {
         bool cond = (e.derived_cast().shape().size() == dimension()) &&
-                    std::equal(shape().begin(), shape().end(), e.derived_cast().shape().begin());
+            std::equal(shape().begin(), shape().end(), e.derived_cast().shape().begin());
         if (!cond)
         {
             semantic_base::operator=(broadcast(e.derived_cast(), shape()));
@@ -483,7 +483,7 @@ namespace xt
     template <class... Args>
     inline auto xview<CT, S...>::at(Args... args) -> reference
     {
-        check_access(shape(), args...);
+        check_access(shape(), static_cast<size_type>(args)...);
         return this->operator()(args...);
     }
 
@@ -539,7 +539,7 @@ namespace xt
     template <class... Args>
     inline auto xview<CT, S...>::at(Args... args) const -> const_reference
     {
-        check_access(shape(), args...);
+        check_access(shape(), static_cast<size_type>(args)...);
         return this->operator()(args...);
     }
 
@@ -660,13 +660,13 @@ namespace xt
     }
 
     template <class CT, class... S>
-    inline auto xview<CT, S...>::operator&() const& -> xtl::xclosure_pointer<const self_type&>
+    inline auto xview<CT, S...>::operator&() const & -> xtl::xclosure_pointer<const self_type&>
     {
         return xtl::closure_pointer(*this);
     }
 
     template <class CT, class... S>
-    inline auto xview<CT, S...>::operator&() && ->xtl::xclosure_pointer<self_type>
+    inline auto xview<CT, S...>::operator&() && -> xtl::xclosure_pointer<self_type>
     {
         return xtl::closure_pointer(std::move(*this));
     }
@@ -741,7 +741,7 @@ namespace xt
     inline auto xview<CT, S...>::sliced_access(const xslice<T>& slice, Arg arg, Args... args) const -> size_type
     {
         using ST = typename T::size_type;
-        return slice.derived_cast()(argument<I>(static_cast<ST>(arg), static_cast<ST>(args)...));
+        return static_cast<size_type>(slice.derived_cast()(argument<I>(static_cast<ST>(arg), static_cast<ST>(args)...)));
     }
 
     template <class CT, class... S>
@@ -756,12 +756,10 @@ namespace xt
     inline auto xview<CT, S...>::make_index(It first, It last) const -> base_index_type
     {
         auto index = xtl::make_sequence<typename xexpression_type::shape_type>(m_e.dimension(), 0);
-        auto func1 = [&first](const auto& s)
-        {
+        auto func1 = [&first](const auto& s) {
             return get_slice_value(s, first);
         };
-        auto func2 = [](const auto& s)
-        {
+        auto func2 = [](const auto& s) {
             return xt::value(s, 0);
         };
         for (size_type i = 0; i != m_e.dimension(); ++i)

@@ -6,8 +6,8 @@
 * The full license is in the file LICENSE, distributed with this software. *
 ****************************************************************************/
 
-#ifndef XFUNCTION_HPP
-#define XFUNCTION_HPP
+#ifndef XTENSOR_FUNCTION_HPP
+#define XTENSOR_FUNCTION_HPP
 
 #include <algorithm>
 #include <cstddef>
@@ -18,6 +18,7 @@
 #include <utility>
 
 #include "xtl/xsequence.hpp"
+#include "xtl/xtype_traits.hpp"
 
 #include "xexpression.hpp"
 #include "xiterable.hpp"
@@ -51,6 +52,9 @@ namespace xt
 
         template <class... Args>
         using common_size_type_t = typename common_size_type<Args...>::type;
+
+        template <bool... B>
+        using conjunction_c = xtl::conjunction<std::integral_constant<bool, B>...>;
 
         /**************************
          * common_difference type *
@@ -159,7 +163,7 @@ namespace xt
         using const_stepper = typename iterable_base::const_stepper;
 
         static constexpr layout_type static_layout = compute_layout(std::decay_t<CT>::static_layout...);
-        static constexpr bool contiguous_layout = and_c<std::decay_t<CT>::contiguous_layout...>::value;
+        static constexpr bool contiguous_layout = detail::conjunction_c<std::decay_t<CT>::contiguous_layout...>::value;
 
         template <layout_type L>
         using layout_iterator = typename iterable_base::template layout_iterator<L>;
@@ -189,7 +193,7 @@ namespace xt
         using reverse_iterator = typename iterable_base::reverse_iterator;
         using const_reverse_iterator = typename iterable_base::const_reverse_iterator;
 
-        template <class Func>
+        template <class Func, class U = std::enable_if<!std::is_base_of<Func, self_type>::value>>
         xfunction(Func&& f, CT... e) noexcept;
 
         size_type size() const noexcept;
@@ -254,6 +258,8 @@ namespace xt
 
         template <class align, class simd = simd_value_type>
         detail::simd_return_type_t<functor_type, simd> load_simd(size_type i) const;
+
+        const std::tuple<CT...>& arguments() const noexcept;
 
     private:
 
@@ -342,7 +348,7 @@ namespace xt
         using reference = typename xfunction_type::value_type;
         using pointer = typename xfunction_type::const_pointer;
         using difference_type = typename xfunction_type::difference_type;
-        using iterator_category = std::forward_iterator_tag;
+        using iterator_category = std::bidirectional_iterator_tag;
 
         template <class... It>
         xfunction_iterator(const xfunction_type* func, It&&... it) noexcept;
@@ -442,7 +448,7 @@ namespace xt
      * @param e the \ref xexpression arguments
      */
     template <class F, class R, class... CT>
-    template <class Func>
+    template <class Func, class U>
     inline xfunction<F, R, CT...>::xfunction(Func&& f, CT... e) noexcept
         : m_e(e...), m_f(std::forward<Func>(f)), m_shape(xtl::make_sequence<shape_type>(0, size_type(1))),
           m_shape_computed(false)
@@ -529,7 +535,7 @@ namespace xt
     template <class... Args>
     inline auto xfunction<F, R, CT...>::at(Args... args) const -> const_reference
     {
-        check_access(shape(), args...);
+        check_access(shape(), static_cast<size_type>(args)...);
         return this->operator()(args...);
     }
 
@@ -684,6 +690,12 @@ namespace xt
     inline auto xfunction<F, R, CT...>::load_simd(size_type i) const -> detail::simd_return_type_t<functor_type, simd>
     {
         return load_simd_impl<align, simd>(std::make_index_sequence<sizeof...(CT)>(), i);
+    }
+
+    template <class F, class R, class... CT>
+    inline auto xfunction<F, R, CT...>::arguments() const noexcept -> const std::tuple<CT...>&
+    {
+        return m_e;
     }
 
     template <class F, class R, class... CT>

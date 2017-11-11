@@ -6,11 +6,12 @@
 * The full license is in the file LICENSE, distributed with this software. *
 ****************************************************************************/
 
-#ifndef XCONTAINER_HPP
-#define XCONTAINER_HPP
+#ifndef XTENSOR_CONTAINER_HPP
+#define XTENSOR_CONTAINER_HPP
 
 #include <algorithm>
 #include <functional>
+#include <iostream>
 #include <numeric>
 #include <stdexcept>
 
@@ -143,6 +144,17 @@ namespace xt
         template <class align, class simd = simd_value_type>
         simd load_simd(size_type i) const;
 
+#if defined(_MSC_VER) && _MSC_VER >= 1910
+        // Workaround for compiler bug in Visual Studio 2017 with respect to alias templates with non-type parameters.
+        template <layout_type L>
+        using layout_iterator = xiterator<typename iterable_base::stepper, typename iterable_base::inner_shape_type*, L>;
+        template <layout_type L>
+        using const_layout_iterator = xiterator<typename iterable_base::const_stepper, typename iterable_base::inner_shape_type*, L>;
+        template <layout_type L>
+        using reverse_layout_iterator = std::reverse_iterator<layout_iterator<L>>;
+        template <layout_type L>
+        using const_reverse_layout_iterator = std::reverse_iterator<const_layout_iterator<L>>;
+#else
         template <layout_type L>
         using layout_iterator = typename iterable_base::template layout_iterator<L>;
         template <layout_type L>
@@ -151,6 +163,7 @@ namespace xt
         using reverse_layout_iterator = typename iterable_base::template reverse_layout_iterator<L>;
         template <layout_type L>
         using const_reverse_layout_iterator = typename iterable_base::template const_reverse_layout_iterator<L>;
+#endif
 
         template <class S, layout_type L>
         using broadcast_iterator = typename iterable_base::template broadcast_iterator<S, L>;
@@ -340,11 +353,11 @@ namespace xt
         using inner_backstrides_type = typename base_type::inner_backstrides_type;
 
         template <class S = shape_type>
-        void reshape(const S& shape, bool force = false);
+        void reshape(S&& shape, bool force = false);
         template <class S = shape_type>
-        void reshape(const S& shape, layout_type l);
+        void reshape(S&& shape, layout_type l);
         template <class S = shape_type>
-        void reshape(const S& shape, const strides_type& strides);
+        void reshape(S&& shape, const strides_type& strides);
 
         layout_type layout() const noexcept;
 
@@ -429,7 +442,7 @@ namespace xt
     template <class D>
     inline auto xcontainer<D>::size() const noexcept -> size_type
     {
-        return data().size();
+        return compute_size(shape());
     }
 
     /**
@@ -469,7 +482,6 @@ namespace xt
     }
     //@}
 
-
     /**
      * @name Data
      */
@@ -507,11 +519,11 @@ namespace xt
     }
 
     /**
-     * Returns a reference to the element at the specified position in the expression,
+     * Returns a reference to the element at the specified position in the container,
      * after dimension and bounds checking.
-     * @param args a list of indices specifying the position in the function. Indices
+     * @param args a list of indices specifying the position in the container. Indices
      * must be unsigned integers, the number of indices should be equal to the number of dimensions
-     * of the expression.
+     * of the container.
      * @exception std::out_of_range if the number of argument is greater than the number of dimensions
      * or if indices are out of bounds.
      */
@@ -519,16 +531,16 @@ namespace xt
     template <class... Args>
     inline auto xcontainer<D>::at(Args... args) -> reference
     {
-        check_access(shape(), args...);
+        check_access(shape(), static_cast<size_type>(args)...);
         return this->operator()(args...);
     }
 
     /**
-     * Returns a constant reference to the element at the specified position in the expression,
+     * Returns a constant reference to the element at the specified position in the container,
      * after dimension and bounds checking.
-     * @param args a list of indices specifying the position in the function. Indices
+     * @param args a list of indices specifying the position in the container. Indices
      * must be unsigned integers, the number of indices should be equal to the number of dimensions
-     * of the expression.
+     * of the container.
      * @exception std::out_of_range if the number of argument is greater than the number of dimensions
      * or if indices are out of bounds.
      */
@@ -536,7 +548,7 @@ namespace xt
     template <class... Args>
     inline auto xcontainer<D>::at(Args... args) const -> const_reference
     {
-        check_access(shape(), args...);
+        check_access(shape(), static_cast<size_type>(args)...);
         return this->operator()(args...);
     }
 
@@ -1145,6 +1157,20 @@ namespace xt
         return m_layout;
     }
 
+    namespace detail
+    {
+        template <class C, class S>
+        inline void resize_data_container(C& c, S size)
+        {
+            c.resize(size);
+        }
+
+        template <class C, class S>
+        inline void resize_data_container(const C&, S)
+        {
+        }
+    }
+
     /**
      * Reshapes the container.
      * @param shape the new shape
@@ -1152,7 +1178,7 @@ namespace xt
      */
     template <class D>
     template <class S>
-    inline void xstrided_container<D>::reshape(const S& shape, bool force)
+    inline void xstrided_container<D>::reshape(S&& shape, bool force)
     {
         if (m_shape.size() != shape.size() || !std::equal(std::begin(shape), std::end(shape), std::begin(m_shape)) || force)
         {
@@ -1164,7 +1190,7 @@ namespace xt
             resize_container(m_strides, m_shape.size());
             resize_container(m_backstrides, m_shape.size());
             size_type data_size = compute_strides(m_shape, m_layout, m_strides, m_backstrides);
-            this->data().resize(data_size);
+            detail::resize_data_container(this->data(), data_size);
         }
     }
 
@@ -1175,14 +1201,14 @@ namespace xt
      */
     template <class D>
     template <class S>
-    inline void xstrided_container<D>::reshape(const S& shape, layout_type l)
+    inline void xstrided_container<D>::reshape(S&& shape, layout_type l)
     {
         if (base_type::static_layout != layout_type::dynamic && l != base_type::static_layout)
         {
             throw std::runtime_error("Cannot change layout_type if template parameter not layout_type::dynamic.");
         }
         m_layout = l;
-        reshape(shape, true);
+        reshape(std::forward<S>(shape), true);
     }
 
     /**
@@ -1192,7 +1218,7 @@ namespace xt
      */
     template <class D>
     template <class S>
-    inline void xstrided_container<D>::reshape(const S& shape, const strides_type& strides)
+    inline void xstrided_container<D>::reshape(S&& shape, const strides_type& strides)
     {
         if (base_type::static_layout != layout_type::dynamic)
         {
@@ -1203,7 +1229,7 @@ namespace xt
         resize_container(m_backstrides, m_strides.size());
         adapt_strides(m_shape, m_strides, m_backstrides);
         m_layout = layout_type::dynamic;
-        this->data().resize(compute_size(m_shape));
+        detail::resize_data_container(this->data(), compute_size(m_shape));
     }
 }
 

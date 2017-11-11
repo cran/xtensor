@@ -6,12 +6,14 @@
 * The full license is in the file LICENSE, distributed with this software. *
 ****************************************************************************/
 
-#ifndef XSCALAR_HPP
-#define XSCALAR_HPP
+#ifndef XTENSOR_SCALAR_HPP
+#define XTENSOR_SCALAR_HPP
 
 #include <array>
 #include <cstddef>
 #include <utility>
+
+#include "xtl/xtype_traits.hpp"
 
 #include "xexpression.hpp"
 #include "xiterable.hpp"
@@ -273,13 +275,13 @@ namespace xt
         template <class... E>
         struct all_xscalar
         {
-            static constexpr bool value = and_<is_xscalar<std::decay_t<E>>...>::value;
+            static constexpr bool value = xtl::conjunction<is_xscalar<std::decay_t<E>>...>::value;
         };
     }
 
-    // Note: MSVC bug workaround. Cannot just define 
+    // Note: MSVC bug workaround. Cannot just define
     // template <class... E>
-    // using all_xscalar = and_<is_xscalar<std::decay_t<E>>...>;
+    // using all_xscalar = xtl::conjunction<is_xscalar<std::decay_t<E>>...>;
 
     template <class... E>
     using all_xscalar = detail::all_xscalar<E...>;

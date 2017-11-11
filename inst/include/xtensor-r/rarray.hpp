@@ -32,11 +32,11 @@ namespace xt
     template <class T>
     struct xcontainer_inner_types<rarray<T>>
     {
-        using container_type = xbuffer_adaptor<T>;
+        using container_type = xbuffer_adaptor<T*>;
         using shape_type = std::vector<typename container_type::size_type>;
         using strides_type = shape_type;
         using backstrides_type = shape_type;
-        using inner_shape_type = xbuffer_adaptor<int>;
+        using inner_shape_type = xbuffer_adaptor<int*>;
         using inner_strides_type = shape_type;
         using inner_backstrides_type = backstrides_type;
         using temporary_type = rarray<T>;
@@ -111,9 +111,6 @@ namespace xt
 
         template <class E>
         self_type& operator=(const xexpression<E>& e);
-
-        template <class S = shape_type>
-        void reshape(const S& shape);
 
         using base_type::begin;
         using base_type::end;
@@ -259,14 +256,6 @@ namespace xt
     inline auto rarray<T>::operator=(const xexpression<E>& e) -> self_type&
     {
         return semantic_base::operator=(e);
-    }
-
-    template <class T>
-    template <class S>
-    inline void rarray<T>::reshape(const S& shape)
-    {
-        self_type tmp(shape);
-        *static_cast<self_type*>(this) = std::move(tmp);
     }
 
     template <class T>

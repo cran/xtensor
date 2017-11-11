@@ -6,8 +6,8 @@
 * The full license is in the file LICENSE, distributed with this software. *
 ****************************************************************************/
 
-#ifndef XASSIGN_HPP
-#define XASSIGN_HPP
+#ifndef XTENSOR_ASSIGN_HPP
+#define XTENSOR_ASSIGN_HPP
 
 #include <algorithm>
 
@@ -46,15 +46,23 @@ namespace xt
      ************************/
 
     template <class Tag>
-    class xexpression_assigner;
+    class xexpression_assigner_base;
 
     template <>
-    class xexpression_assigner<xtensor_expression_tag>
+    class xexpression_assigner_base<xtensor_expression_tag>
     {
     public:
 
         template <class E1, class E2>
         static void assign_data(xexpression<E1>& e1, const xexpression<E2>& e2, bool trivial);
+    };
+
+    template <class Tag>
+    class xexpression_assigner : public xexpression_assigner_base<Tag>
+    {
+    public:
+
+        using base_type = xexpression_assigner_base<Tag>;
 
         template <class E1, class E2>
         static void assign_xexpression(xexpression<E1>& e1, const xexpression<E2>& e2);
@@ -192,7 +200,7 @@ namespace xt
     }
 
     template <class E1, class E2>
-    inline void xexpression_assigner<xtensor_expression_tag>::assign_data(xexpression<E1>& e1, const xexpression<E2>& e2, bool trivial)
+    inline void xexpression_assigner_base<xtensor_expression_tag>::assign_data(xexpression<E1>& e1, const xexpression<E2>& e2, bool trivial)
     {
         E1& de1 = e1.derived_cast();
         const E2& de2 = e2.derived_cast();
@@ -214,28 +222,17 @@ namespace xt
         }
     }
 
+    template <class Tag>
     template <class E1, class E2>
-    inline bool xexpression_assigner<xtensor_expression_tag>::reshape(xexpression<E1>& e1, const xexpression<E2>& e2)
-    {
-        using shape_type = typename E1::shape_type;
-        using size_type = typename E1::size_type;
-        const E2& de2 = e2.derived_cast();
-        size_type size = de2.dimension();
-        shape_type shape = xtl::make_sequence<shape_type>(size, size_type(1));
-        bool trivial_broadcast = de2.broadcast_shape(shape);
-        e1.derived_cast().reshape(shape);
-        return trivial_broadcast;
-    }
-
-    template <class E1, class E2>
-    inline void xexpression_assigner<xtensor_expression_tag>::assign_xexpression(xexpression<E1>& e1, const xexpression<E2>& e2)
+    inline void xexpression_assigner<Tag>::assign_xexpression(xexpression<E1>& e1, const xexpression<E2>& e2)
     {
         bool trivial_broadcast = reshape(e1, e2);
-        assign_data(e1, e2, trivial_broadcast);
+        base_type::assign_data(e1, e2, trivial_broadcast);
     }
 
+    template <class Tag>
     template <class E1, class E2>
-    inline void xexpression_assigner<xtensor_expression_tag>::computed_assign(xexpression<E1>& e1, const xexpression<E2>& e2)
+    inline void xexpression_assigner<Tag>::computed_assign(xexpression<E1>& e1, const xexpression<E2>& e2)
     {
         using shape_type = typename E1::shape_type;
         using size_type = typename E1::size_type;
@@ -250,25 +247,27 @@ namespace xt
         if (dim > de1.dimension() || shape > de1.shape())
         {
             typename E1::temporary_type tmp(shape);
-            assign_data(tmp, e2, trivial_broadcast);
+            base_type::assign_data(tmp, e2, trivial_broadcast);
             de1.assign_temporary(std::move(tmp));
         }
         else
         {
-            assign_data(e1, e2, trivial_broadcast);
+            base_type::assign_data(e1, e2, trivial_broadcast);
         }
     }
 
+    template <class Tag>
     template <class E1, class E2, class F>
-    inline void xexpression_assigner<xtensor_expression_tag>::scalar_computed_assign(xexpression<E1>& e1, const E2& e2, F&& f)
+    inline void xexpression_assigner<Tag>::scalar_computed_assign(xexpression<E1>& e1, const E2& e2, F&& f)
     {
         E1& d = e1.derived_cast();
         std::transform(d.cbegin(), d.cend(), d.begin(),
                        [e2, &f](const auto& v) { return f(v, e2); });
     }
 
+    template <class Tag>
     template <class E1, class E2>
-    inline void xexpression_assigner<xtensor_expression_tag>::assert_compatible_shape(const xexpression<E1>& e1, const xexpression<E2>& e2)
+    inline void xexpression_assigner<Tag>::assert_compatible_shape(const xexpression<E1>& e1, const xexpression<E2>& e2)
     {
         using shape_type = typename E1::shape_type;
         using size_type = typename E1::size_type;
@@ -282,6 +281,25 @@ namespace xt
             throw broadcast_error(shape, de1.shape());
         }
     }
+
+    template <class Tag>
+    template <class E1, class E2>
+    inline bool xexpression_assigner<Tag>::reshape(xexpression<E1>& e1, const xexpression<E2>& e2)
+    {
+        using shape_type = typename E1::shape_type;
+        using size_type = typename E1::size_type;
+        const E2& de2 = e2.derived_cast();
+        size_type size = de2.dimension();
+        shape_type shape = xtl::make_sequence<shape_type>(size, size_type(1));
+        bool trivial_broadcast = de2.broadcast_shape(shape);
+        e1.derived_cast().reshape(std::move(shape));
+        return trivial_broadcast;
+    }
+
+    /***************************************
+     * xexpression_assigner implementation *
+     ***************************************/
+
 
     /********************************
      * data_assigner implementation *
@@ -347,7 +365,7 @@ namespace xt
         size_type size = e1.size();
         size_type simd_size = simd_type::size;
         size_type align_begin = is_aligned ? 0 : xsimd::get_alignment_offset(&(e1.data()), size, simd_size);
-        size_type align_end = align_begin + ((size - align_begin) &~(simd_size - 1));
+        size_type align_end = align_begin + ((size - align_begin) & ~(simd_size - 1));
         for (size_type i = 0; i < align_begin; ++i)
         {
             e1.data_element(i) = e2.data_element(i);
@@ -382,12 +400,12 @@ namespace xt
     template <class E1, class E2>
     inline void trivial_assigner<false>::run(E1& e1, const E2& e2)
     {
-        using is_same_type = std::is_same<typename std::decay_t<E1>::value_type,
-                                          typename std::decay_t<E2>::value_type>;
-        // If the types differ, this function is still instantiated but never called.
-        // To avoid compilation problems in effectively unused code (e.g. warnings
-        // on narrowing type conversions), trivial_assigner_run_impl is empty in this case.
-        assigner_detail::trivial_assigner_run_impl(e1, e2, is_same_type());
+        using is_convertible = std::is_convertible<typename std::decay_t<E1>::value_type,
+                                                   typename std::decay_t<E2>::value_type>;
+        // If the types are not compatible, this function is still instantiated but never called.
+        // To avoid compilation problems in effectively unused code trivial_assigner_run_impl is
+        // empty in this case.
+        assigner_detail::trivial_assigner_run_impl(e1, e2, is_convertible());
     }
 }
 

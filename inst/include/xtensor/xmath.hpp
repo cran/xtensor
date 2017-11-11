@@ -10,8 +10,8 @@
  * @brief standard mathematical functions for xexpressions
  */
 
-#ifndef XMATH_HPP
-#define XMATH_HPP
+#ifndef XTENSOR_MATH_HPP
+#define XTENSOR_MATH_HPP
 
 #include <cmath>
 #include <complex>
@@ -19,6 +19,8 @@
 
 #include "xoperation.hpp"
 #include "xreducer.hpp"
+
+#include "xtl/xcomplex.hpp"
 
 namespace xt
 {
@@ -60,6 +62,11 @@ namespace xt
         {                                                                       \
             return arg;                                                         \
         }                                                                       \
+        template <class U>                                                      \
+        struct rebind                                                           \
+        {                                                                       \
+            using type = abs_fun<U>;                                            \
+        };                                                                      \
     }
 
 #define UNARY_MATH_FUNCTOR_IMPL(NAME, R)                                        \
@@ -86,6 +93,11 @@ namespace xt
             using std::NAME;                                                    \
             return NAME(arg);                                                   \
         }                                                                       \
+        template <class U>                                                      \
+        struct rebind                                                           \
+        {                                                                       \
+            using type = NAME##_fun<U>;                                         \
+        };                                                                      \
     }
 
 #define UNARY_MATH_FUNCTOR(NAME) UNARY_MATH_FUNCTOR_IMPL(NAME, T)
@@ -114,6 +126,11 @@ namespace xt
             using std::NAME;                                                    \
             return NAME(arg);                                                   \
         }                                                                       \
+        template <class U>                                                      \
+        struct rebind                                                           \
+        {                                                                       \
+            using type = NAME##_fun<U>;                                         \
+        };                                                                      \
     }
 
 #define BINARY_MATH_FUNCTOR_IMPL(NAME, R)                                        \
@@ -142,6 +159,11 @@ namespace xt
             using std::NAME;                                                     \
             return NAME(arg1, arg2);                                             \
         }                                                                        \
+        template <class U>                                                       \
+        struct rebind                                                            \
+        {                                                                        \
+            using type = NAME##_fun<U>;                                          \
+        };                                                                       \
     }
 
 #define BINARY_MATH_FUNCTOR(NAME) BINARY_MATH_FUNCTOR_IMPL(NAME, T)
@@ -177,6 +199,11 @@ namespace xt
             using std::NAME;                                                     \
             return NAME(arg1, arg2, arg3);                                       \
         }                                                                        \
+        template <class U>                                                       \
+        struct rebind                                                            \
+        {                                                                        \
+            using type = NAME##_fun<U>;                                          \
+        };                                                                       \
     }
 
 #define TERNARY_MATH_FUNCTOR(NAME) TERNARY_MATH_FUNCTOR_IMPL(NAME, T)
@@ -610,7 +637,7 @@ namespace xt
             }
 
             template <typename T>
-            inline std::enable_if_t<xt::detail::is_complex<T>::value, T>
+            inline std::enable_if_t<xtl::is_complex<T>::value, T>
             sign_impl(T x)
             {
                 typename T::value_type e = (x.real() != T(0)) ? x.real() : x.imag();
@@ -1350,17 +1377,23 @@ namespace xt
             {
                 using std::abs;
 
-                if(std::isnan(a) && std::isnan(b))
+                if (std::isnan(a) && std::isnan(b))
                 {
                     return m_equal_nan;
                 }
-                if(std::isinf(a) && std::isinf(b))
+                if (std::isinf(a) && std::isinf(b))
                 {
                     return std::signbit(a) == std::signbit(b);
                 }
                 auto d = abs(a - b);
                 return d <= m_atol || d <= m_rtol * std::max(abs(a), abs(b));
             }
+
+            template <class U>
+            struct rebind
+            {
+                using type = isclose<U>;
+            };
 
         private:
             double m_rtol;
@@ -1527,7 +1560,6 @@ namespace xt
     template <class E>
     inline auto mean(E&& e) noexcept
     {
-        using value_type = typename std::decay_t<E>::value_type;
         auto size = e.size();
         return sum(std::forward<E>(e)) / static_cast<double>(size);
     }
@@ -1536,7 +1568,6 @@ namespace xt
     template <class E, class I>
     inline auto mean(E&& e, std::initializer_list<I> axes) noexcept
     {
-        using value_type = typename std::decay_t<E>::value_type;
         auto size = e.size();
         auto s = sum(std::forward<E>(e), axes);
         return std::move(s) / static_cast<double>(size / s.size());
@@ -1545,7 +1576,6 @@ namespace xt
     template <class E, class I, std::size_t N>
     inline auto mean(E&& e, const I (&axes)[N]) noexcept
     {
-        using value_type = typename std::decay_t<E>::value_type;
         auto size = e.size();
         auto s = sum(std::forward<E>(e), axes);
         return std::move(s) / static_cast<double>(size / s.size());

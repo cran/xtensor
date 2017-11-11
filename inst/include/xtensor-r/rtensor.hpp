@@ -42,11 +42,11 @@ namespace xt
     template <class T, std::size_t N>
     struct xcontainer_inner_types<rtensor<T, N>>
     {
-        using container_type = xbuffer_adaptor<T>;
+        using container_type = xbuffer_adaptor<T*>;
         using shape_type = std::array<int, N>;
         using strides_type = shape_type;
         using backstrides_type = shape_type;
-        using inner_shape_type = xbuffer_adaptor<int>;
+        using inner_shape_type = xbuffer_adaptor<int*>;
         using inner_strides_type = strides_type;
         using inner_backstrides_type = backstrides_type;
         using temporary_type = rtensor<T, N>;
@@ -113,9 +113,6 @@ namespace xt
         template <class E>
         self_type& operator=(const xexpression<E>& e);
 
-        template <class S>
-        inline void reshape(const S& shape);
-
         layout_type layout() const;
 
         using base_type::begin;
@@ -163,7 +160,7 @@ namespace xt
         xt::compute_strides(tmp_shape, layout_type::column_major, m_strides, m_backstrides);
         // Workaround. Rcpp's IntegerVector lacks cbegin() and cend() methods
         // which are used in compute_size().
-        auto adaptor = xbuffer_adaptor<int>(&(tmp_shape[0]), N);
+        auto adaptor = xbuffer_adaptor<int*>(&(tmp_shape[0]), N);
         std::size_t sz = compute_size(adaptor);
 
         base_type::set_sexp(Rf_allocArray(SXP, SEXP(tmp_shape)));
@@ -295,14 +292,6 @@ namespace xt
         return semantic_base::operator=(e);
     }
     //@}
-
-    template <class T, std::size_t N>
-    template <class S>
-    inline void rtensor<T, N>::reshape(const S& shape)
-    {
-        auto tmp = self_type::from_shape(shape);
-        *static_cast<self_type*>(this) = std::move(tmp);
-    }
 
     template <class T, std::size_t N>
     inline layout_type rtensor<T, N>::layout() const

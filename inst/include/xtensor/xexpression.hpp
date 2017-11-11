@@ -6,14 +6,15 @@
 * The full license is in the file LICENSE, distributed with this software. *
 ****************************************************************************/
 
-#ifndef XEXPRESSION_HPP
-#define XEXPRESSION_HPP
+#ifndef XTENSOR_EXPRESSION_HPP
+#define XTENSOR_EXPRESSION_HPP
 
 #include <cstddef>
 #include <type_traits>
 #include <vector>
 
 #include "xtl/xclosure.hpp"
+#include "xtl/xtype_traits.hpp"
 
 #include "xutils.hpp"
 
@@ -117,7 +118,7 @@ namespace xt
     using disable_xexpression = typename std::enable_if<!is_xexpression<E>::value, R>::type;
 
     template <class... E>
-    using has_xexpression = or_<is_xexpression<E>...>;
+    using has_xexpression = xtl::disjunction<is_xexpression<E>...>;
 
     /************
      * xclosure *
@@ -224,7 +225,13 @@ namespace xt
      * expression tag system *
      *************************/
 
-    struct xtensor_expression_tag {};
+    struct xtensor_expression_tag
+    {
+    };
+
+    struct xoptional_expression_tag
+    {
+    };
 
     namespace detail
     {
@@ -256,6 +263,18 @@ namespace xt
         struct expression_tag_and<T, T>
         {
             using type = T;
+        };
+
+        template <>
+        struct expression_tag_and<xtensor_expression_tag, xoptional_expression_tag>
+        {
+            using type = xoptional_expression_tag;
+        };
+
+        template <>
+        struct expression_tag_and<xoptional_expression_tag, xtensor_expression_tag>
+            : expression_tag_and<xtensor_expression_tag, xoptional_expression_tag>
+        {
         };
 
         template <class T1, class... T>

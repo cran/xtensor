@@ -6,8 +6,8 @@
 * The full license is in the file LICENSE, distributed with this software. *
 ****************************************************************************/
 
-#ifndef XOPERATION_HPP
-#define XOPERATION_HPP
+#ifndef XTENSOR_OPERATION_HPP
+#define XTENSOR_OPERATION_HPP
 
 #include <algorithm>
 #include <functional>
@@ -16,11 +16,15 @@
 #include "xtl/xsequence.hpp"
 
 #include "xfunction.hpp"
+//#include "xoptional.hpp"
 #include "xscalar.hpp"
 #include "xstrides.hpp"
 
 namespace xt
 {
+
+    template <class F, class R, class... CT>
+    class xoptional_function;
 
     /***********
      * helpers *
@@ -60,6 +64,11 @@ namespace xt
         {                                                                       \
             return OP arg;                                                      \
         }                                                                       \
+        template <class U>                                                      \
+        struct rebind                                                           \
+        {                                                                       \
+            using type = NAME<U>;                                               \
+        };                                                                      \
     }
 
 #define UNARY_OPERATOR_FUNCTOR(NAME, OP) UNARY_OPERATOR_FUNCTOR_IMPL(NAME, OP, T)
@@ -91,6 +100,11 @@ namespace xt
         {                                                                        \
             return (arg1 OP arg2);                                               \
         }                                                                        \
+        template <class U>                                                       \
+        struct rebind                                                            \
+        {                                                                        \
+            using type = NAME<U>;                                                \
+        };                                                                       \
     }
 
 #define BINARY_OPERATOR_FUNCTOR(NAME, OP) BINARY_OPERATOR_FUNCTOR_IMPL(NAME, OP, T)
@@ -108,6 +122,10 @@ namespace xt
         BINARY_BOOL_OPERATOR_FUNCTOR(logical_or, ||);
         BINARY_BOOL_OPERATOR_FUNCTOR(logical_and, &&);
         UNARY_BOOL_OPERATOR_FUNCTOR(logical_not, !);
+        BINARY_OPERATOR_FUNCTOR(bitwise_or, |);
+        BINARY_OPERATOR_FUNCTOR(bitwise_and, &);
+        BINARY_OPERATOR_FUNCTOR(bitwise_xor, ^);
+        UNARY_OPERATOR_FUNCTOR(bitwise_not, ~);
         BINARY_BOOL_OPERATOR_FUNCTOR(less, <);
         BINARY_BOOL_OPERATOR_FUNCTOR(less_equal, <=);
         BINARY_BOOL_OPERATOR_FUNCTOR(greater, >);
@@ -132,6 +150,38 @@ namespace xt
             {
                 return xsimd::select(t1, t2, t3);
             }
+            template <class U>
+            struct rebind
+            {
+                using type = conditional_ternary<U>;
+            };
+        };
+
+        template <class R>
+        struct cast
+        {
+            template <class T>
+            struct functor
+            {
+                using return_type = xt::detail::functor_return_type<T, R>;
+                using argument_type = T;
+                using result_type = typename return_type::type;
+                using simd_value_type = xsimd::simd_type<T>;
+                using simd_result_type = typename return_type::simd_type;
+                constexpr result_type operator()(const T& arg) const
+                {
+                    return static_cast<R>(arg);
+                }
+                constexpr simd_result_type simd_apply(const simd_value_type& arg) const
+                {
+                    return static_cast<R>(arg);
+                }
+                template <class U>
+                struct rebind
+                {
+                    using type = functor<U>;
+                };
+            };
         };
 
         template <class Tag, class F, class... E>
@@ -143,6 +193,12 @@ namespace xt
             using type = xfunction<F, typename F::result_type, E...>;
         };
 
+        template <class F, class... E>
+        struct select_xfunction_expression<xoptional_expression_tag, F, E...>
+        {
+            using type = xoptional_function<F, typename F::result_type, E...>;
+        };
+
         template <class Tag, class F, class... E>
         using select_xfunction_expression_t = typename select_xfunction_expression<Tag, F, E...>::type;
 
@@ -151,6 +207,12 @@ namespace xt
 
         template <template <class...> class F, class... E>
         struct build_functor_type<xtensor_expression_tag, F, E...>
+        {
+            using type = F<common_value_type_t<std::decay_t<E>...>>;
+        };
+
+        template <template <class...> class F, class... E>
+        struct build_functor_type<xoptional_expression_tag, F, E...>
         {
             using type = F<common_value_type_t<std::decay_t<E>...>>;
         };
@@ -356,6 +418,77 @@ namespace xt
     }
 
     /**
+     * @defgroup bitwise_operators Bitwise operators
+     */
+
+    /**
+     * @ingroup bitwise_operators
+     * @brief Bitwise and
+     *
+     * Returns an \ref xfunction for the element-wise bitwise and
+     * of \a e1 and \a e2.
+     * @param e1 an \ref xexpression or a scalar
+     * @param e2 an \ref xexpression or a scalar
+     * @return an \ref xfunction
+     */
+    template <class E1, class E2>
+    inline auto operator&(E1&& e1, E2&& e2) noexcept
+        -> detail::xfunction_type_t<detail::bitwise_and, E1, E2>
+    {
+        return detail::make_xfunction<detail::bitwise_and>(std::forward<E1>(e1), std::forward<E2>(e2));
+    }
+
+    /**
+     * @ingroup bitwise_operators
+     * @brief Bitwise or
+     *
+     * Returns an \ref xfunction for the element-wise bitwise or
+     * of \a e1 and \a e2.
+     * @param e1 an \ref xexpression or a scalar
+     * @param e2 an \ref xexpression or a scalar
+     * @return an \ref xfunction
+     */
+    template <class E1, class E2>
+    inline auto operator|(E1&& e1, E2&& e2) noexcept
+        -> detail::xfunction_type_t<detail::bitwise_or, E1, E2>
+    {
+        return detail::make_xfunction<detail::bitwise_or>(std::forward<E1>(e1), std::forward<E2>(e2));
+    }
+
+    /**
+     * @ingroup bitwise_operators
+     * @brief Bitwise xor
+     *
+     * Returns an \ref xfunction for the element-wise bitwise xor
+     * of \a e1 and \a e2.
+     * @param e1 an \ref xexpression or a scalar
+     * @param e2 an \ref xexpression or a scalar
+     * @return an \ref xfunction
+     */
+    template <class E1, class E2>
+    inline auto operator^(E1&& e1, E2&& e2) noexcept
+        -> detail::xfunction_type_t<detail::bitwise_xor, E1, E2>
+    {
+        return detail::make_xfunction<detail::bitwise_xor>(std::forward<E1>(e1), std::forward<E2>(e2));
+    }
+
+    /**
+     * @ingroup bitwise_operators
+     * @brief Bitwise not
+     *
+     * Returns an \ref xfunction for the element-wise bitwise not
+     * of \a e.
+     * @param e an \ref xexpression
+     * @return an \ref xfunction
+     */
+    template <class E>
+    inline auto operator~(E&& e) noexcept
+        -> detail::xfunction_type_t<detail::bitwise_not, E>
+    {
+        return detail::make_xfunction<detail::bitwise_not>(std::forward<E>(e));
+    }
+
+    /**
      * @defgroup comparison_operators Comparison operators
      */
 
@@ -542,8 +675,7 @@ namespace xt
         auto idx = xtl::make_sequence<index_type>(arr.dimension(), 0);
         std::vector<index_type> indices;
 
-        auto next_idx = [&shape](index_type& idx)
-        {
+        auto next_idx = [&shape](index_type& idx) {
             for (size_type j = shape.size(); j > 0; --j)
             {
                 size_type i = j - 1;
@@ -635,6 +767,28 @@ namespace xt
             return std::all_of(e.begin(), e.end(),
                                [](const typename std::decay_t<E>::value_type& el) { return el; });
         }
+    }
+
+    /**
+     * @defgroup casting_operators Casting operators
+     */
+
+    /**
+     * @ingroup casting_operators
+     * @brief Element-wise ``static_cast``.
+     *
+     * Returns an \ref xfunction for the element-wise
+     * static_cast of \a e to type R.
+     *
+     * @param e an \ref xexpression or a scalar
+     * @return an \ref xfunction
+     */
+
+    template <class R, class E>
+    inline auto cast(E&& e) noexcept
+        -> detail::xfunction_type_t<detail::cast<R>::template functor, E>
+    {
+        return detail::make_xfunction<detail::cast<R>::template functor>(std::forward<E>(e));
     }
 }
 
