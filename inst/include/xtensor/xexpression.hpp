@@ -225,6 +225,10 @@ namespace xt
      * expression tag system *
      *************************/
 
+    struct xscalar_expression_tag
+    {
+    };
+
     struct xtensor_expression_tag
     {
     };
@@ -266,6 +270,24 @@ namespace xt
         };
 
         template <>
+        struct expression_tag_and<xscalar_expression_tag, xscalar_expression_tag>
+        {
+            using type = xscalar_expression_tag;
+        };
+
+        template <class T>
+        struct expression_tag_and<xscalar_expression_tag, T>
+        {
+            using type = T;
+        };
+
+        template <class T>
+        struct expression_tag_and<T, xscalar_expression_tag>
+            : expression_tag_and<xscalar_expression_tag, T>
+        {
+        };
+
+        template <>
         struct expression_tag_and<xtensor_expression_tag, xoptional_expression_tag>
         {
             using type = xoptional_expression_tag;
@@ -295,6 +317,28 @@ namespace xt
 
     template <class... T>
     using xexpression_tag_t = typename xexpression_tag<T...>::type;
+
+    template <class E>
+    struct is_xtensor_expression : std::is_same<xexpression_tag_t<E>, xtensor_expression_tag>
+    {
+    };
+
+    template <class E>
+    struct is_xoptional_expression : std::is_same<xexpression_tag_t<E>, xoptional_expression_tag>
+    {
+    };
+
+    /********************************
+     * xoptional_comparable concept *
+     ********************************/
+
+    template <class... E>
+    struct xoptional_comparable : xtl::conjunction<xtl::disjunction<is_xtensor_expression<E>,
+                                                                    is_xoptional_expression<E>
+                                                                   >...
+                                                  >
+    {
+    };
 }
 
 #endif

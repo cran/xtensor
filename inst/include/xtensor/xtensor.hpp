@@ -69,6 +69,7 @@ namespace xt
         using base_type = xstrided_container<self_type>;
         using semantic_base = xcontainer_semantic<self_type>;
         using container_type = typename base_type::container_type;
+        using allocator_type = typename base_type::allocator_type;
         using value_type = typename base_type::value_type;
         using reference = typename base_type::reference;
         using const_reference = typename base_type::const_reference;
@@ -178,7 +179,7 @@ namespace xt
         xtensor_adaptor(const container_type& data);
 
         template <class D>
-        xtensor_adaptor(D&& data, const shape_type& shape, layout_type l = layout_type::row_major);
+        xtensor_adaptor(D&& data, const shape_type& shape, layout_type l = L);
 
         template <class D>
         xtensor_adaptor(D&& data, const shape_type& shape, const strides_type& strides);

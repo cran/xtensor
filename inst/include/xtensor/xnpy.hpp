@@ -557,7 +557,7 @@ namespace xt
             {
                 auto cast_elems = cast_impl<T, L>(check_type);
                 m_buffer = nullptr;
-                return xadapt(std::move(std::get<0>(cast_elems)), std::get<1>(cast_elems),
+                return adapt(std::move(std::get<0>(cast_elems)), std::get<1>(cast_elems),
                               acquire_ownership(), std::get<2>(cast_elems), std::get<3>(cast_elems));
             }
 
@@ -565,7 +565,7 @@ namespace xt
             auto cast(bool check_type = true) const &
             {
                 auto cast_elems = cast_impl<T, L>(check_type);
-                return xadapt(std::get<0>(cast_elems), std::get<1>(cast_elems),
+                return adapt(std::get<0>(cast_elems), std::get<1>(cast_elems),
                               no_ownership(), std::get<2>(cast_elems), std::get<3>(cast_elems));
             }
 
@@ -573,7 +573,7 @@ namespace xt
             auto cast(bool check_type = true) &
             {
                 auto cast_elems = cast_impl<T, L>(check_type);
-                return xadapt(std::get<0>(cast_elems), std::get<1>(cast_elems),
+                return adapt(std::get<0>(cast_elems), std::get<1>(cast_elems),
                               no_ownership(), std::get<2>(cast_elems), std::get<3>(cast_elems));
             }
 
@@ -636,7 +636,7 @@ namespace xt
             const E& ex = e.derived_cast();
             auto&& eval_ex = eval(ex);
             bool fortran_order = false;
-            if (eval_ex.layout() == layout_type::column_major)
+            if (eval_ex.layout() == layout_type::column_major && eval_ex.dimension() > 1)
             {
                 fortran_order = true;
             }

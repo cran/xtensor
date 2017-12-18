@@ -15,6 +15,7 @@
 #include <numeric>
 #include <stdexcept>
 
+#include "xtl/xmeta_utils.hpp"
 #include "xtl/xsequence.hpp"
 
 #include "xiterable.hpp"
@@ -57,6 +58,7 @@ namespace xt
 
         using inner_types = xcontainer_inner_types<D>;
         using container_type = typename inner_types::container_type;
+        using allocator_type = typename container_type::allocator_type;
         using value_type = typename container_type::value_type;
         using reference = typename container_type::reference;
         using const_reference = typename container_type::const_reference;
@@ -80,7 +82,7 @@ namespace xt
 
         static constexpr layout_type static_layout = inner_types::layout;
         static constexpr bool contiguous_layout = static_layout != layout_type::dynamic;
-        using data_alignment = xsimd::container_alignment<container_type>;
+        using data_alignment = xsimd::container_alignment_t<container_type>;
         using simd_type = xsimd::simd_type<value_type>;
 
         size_type size() const noexcept;
@@ -103,9 +105,16 @@ namespace xt
         template <class... Args>
         const_reference at(Args... args) const;
 
-        reference operator[](const xindex& index);
+        template <class S>
+        disable_integral_t<S, reference> operator[](const S& index);
+        template <class I>
+        reference operator[](std::initializer_list<I> index);
         reference operator[](size_type i);
-        const_reference operator[](const xindex& index) const;
+
+        template <class S>
+        disable_integral_t<S, const_reference> operator[](const S& index) const;
+        template <class I>
+        const_reference operator[](std::initializer_list<I> index) const;
         const_reference operator[](size_type i) const;
 
         template <class It>
@@ -559,9 +568,18 @@ namespace xt
      * than the number of dimensions of the container.
      */
     template <class D>
-    inline auto xcontainer<D>::operator[](const xindex& index) -> reference
+    template <class S>
+    inline auto xcontainer<D>::operator[](const S& index)
+        -> disable_integral_t<S, reference>
     {
         return element(index.cbegin(), index.cend());
+    }
+
+    template <class D>
+    template <class I>
+    inline auto xcontainer<D>::operator[](std::initializer_list<I> index) -> reference
+    {
+        return element(index.begin(), index.end());
     }
 
     template <class D>
@@ -577,9 +595,18 @@ namespace xt
      * than the number of dimensions of the container.
      */
     template <class D>
-    inline auto xcontainer<D>::operator[](const xindex& index) const -> const_reference
+    template <class S>
+    inline auto xcontainer<D>::operator[](const S& index) const
+        -> disable_integral_t<S, const_reference>
     {
         return element(index.cbegin(), index.cend());
+    }
+
+    template <class D>
+    template <class I>
+    inline auto xcontainer<D>::operator[](std::initializer_list<I> index) const -> const_reference
+    {
+        return element(index.begin(), index.end());
     }
 
     template <class D>
@@ -700,7 +727,7 @@ namespace xt
     template <layout_type L>
     inline auto xcontainer<D>::begin() noexcept -> select_iterator<L>
     {
-        return static_if<L == static_layout>([&](auto self)
+        return xtl::mpl::static_if<L == static_layout>([&](auto self)
         {
             return self(*this).template storage_begin<L>();
         }, /*else*/ [&](auto self)
@@ -713,7 +740,7 @@ namespace xt
     template <layout_type L>
     inline auto xcontainer<D>::end() noexcept -> select_iterator<L>
     {
-        return static_if<L == static_layout>([&](auto self)
+        return xtl::mpl::static_if<L == static_layout>([&](auto self)
         {
             return self(*this).template storage_end<L>();
         }, /*else*/ [&](auto self)
@@ -740,7 +767,7 @@ namespace xt
     template <layout_type L>
     inline auto xcontainer<D>::cbegin() const noexcept -> select_const_iterator<L>
     {
-        return static_if<L == static_layout>([&](auto self)
+        return xtl::mpl::static_if<L == static_layout>([&](auto self)
         {
             return self(*this).template storage_cbegin<L>();
         }, /*else*/ [&](auto self)
@@ -753,7 +780,7 @@ namespace xt
     template <layout_type L>
     inline auto xcontainer<D>::cend() const noexcept -> select_const_iterator<L>
     {
-        return static_if<L == static_layout>([&](auto self)
+        return xtl::mpl::static_if<L == static_layout>([&](auto self)
         {
             return self(*this).template storage_cend<L>();
         }, /*else*/ [&](auto self)
@@ -766,7 +793,7 @@ namespace xt
     template <layout_type L>
     inline auto xcontainer<D>::rbegin() noexcept -> select_reverse_iterator<L>
     {
-        return static_if<L == static_layout>([&](auto self)
+        return xtl::mpl::static_if<L == static_layout>([&](auto self)
         {
             return self(*this).template storage_rbegin<L>();
         }, /*else*/ [&](auto self)
@@ -779,7 +806,7 @@ namespace xt
     template <layout_type L>
     inline auto xcontainer<D>::rend() noexcept -> select_reverse_iterator<L>
     {
-        return static_if<L == static_layout>([&](auto self)
+        return xtl::mpl::static_if<L == static_layout>([&](auto self)
         {
             return self(*this).template storage_rend<L>();
         }, /*else*/ [&](auto self)
@@ -806,7 +833,7 @@ namespace xt
     template <layout_type L>
     inline auto xcontainer<D>::crbegin() const noexcept -> select_const_reverse_iterator<L>
     {
-        return static_if<L == static_layout>([&](auto self)
+        return xtl::mpl::static_if<L == static_layout>([&](auto self)
         {
             return self(*this).template storage_crbegin<L>();
         }, /*else*/ [&](auto self)
@@ -819,7 +846,7 @@ namespace xt
     template <layout_type L>
     inline auto xcontainer<D>::crend() const noexcept -> select_const_reverse_iterator<L>
     {
-        return static_if<L == static_layout>([&](auto self)
+        return xtl::mpl::static_if<L == static_layout>([&](auto self)
         {
             return self(*this).template storage_crend<L>();
         }, /*else*/ [&](auto self)
@@ -1184,7 +1211,7 @@ namespace xt
         {
             if (m_layout == layout_type::dynamic || m_layout == layout_type::any)
             {
-                m_layout = layout_type::row_major;  // fall back to row major
+                m_layout = DEFAULT_LAYOUT;  // fall back to default layout
             }
             m_shape = xtl::forward_sequence<shape_type>(shape);
             resize_container(m_strides, m_shape.size());

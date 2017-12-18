@@ -125,7 +125,10 @@ namespace xt
         reference operator()(Args... args);
         template <class... Args>
         reference at(Args... args);
-        reference operator[](const xindex& index);
+        template <class OS>
+        disable_integral_t<OS, reference> operator[](const OS& index);
+        template <class I>
+        reference operator[](std::initializer_list<I> index);
         reference operator[](size_type i);
         template <class It>
         reference element(It first, It last);
@@ -134,7 +137,10 @@ namespace xt
         const_reference operator()(Args... args) const;
         template <class... Args>
         const_reference at(Args... args) const;
-        const_reference operator[](const xindex& index) const;
+        template <class OS>
+        disable_integral_t<OS, const_reference> operator[](const OS& index) const;
+        template <class I>
+        const_reference operator[](std::initializer_list<I> index) const;
         const_reference operator[](size_type i) const;
         template <class It>
         const_reference element(It first, It last) const;
@@ -160,7 +166,7 @@ namespace xt
         data() const;
 
         template <class T = xexpression_type>
-        std::enable_if_t<has_raw_data_interface<T>::value, const typename T::strides_type>
+        std::enable_if_t<has_raw_data_interface<T>::value, strides_type>
         strides() const;
 
         template <class T = xexpression_type>
@@ -488,9 +494,19 @@ namespace xt
     }
 
     template <class CT, class... S>
-    inline auto xview<CT, S...>::operator[](const xindex& index) -> reference
+    template <class OS>
+    inline auto xview<CT, S...>::operator[](const OS& index)
+        -> disable_integral_t<OS, reference>
     {
         return element(index.cbegin(), index.cend());
+    }
+
+    template <class CT, class... S>
+    template <class I>
+    inline auto xview<CT, S...>::operator[](std::initializer_list<I> index)
+        -> reference
+    {
+        return element(index.begin(), index.end());
     }
 
     template <class CT, class... S>
@@ -544,9 +560,19 @@ namespace xt
     }
 
     template <class CT, class... S>
-    inline auto xview<CT, S...>::operator[](const xindex& index) const -> const_reference
+    template <class OS>
+    inline auto xview<CT, S...>::operator[](const OS& index) const
+        -> disable_integral_t<OS, const_reference>
     {
         return element(index.cbegin(), index.cend());
+    }
+
+    template <class CT, class... S>
+    template <class I>
+    inline auto xview<CT, S...>::operator[](std::initializer_list<I> index) const
+        -> const_reference
+    {
+        return element(index.begin(), index.end());
     }
 
     template <class CT, class... S>
@@ -583,9 +609,8 @@ namespace xt
     template <class CT, class... S>
     template <class T>
     inline auto xview<CT, S...>::strides() const ->
-        std::enable_if_t<has_raw_data_interface<T>::value, const typename T::strides_type>
+        std::enable_if_t<has_raw_data_interface<T>::value, strides_type>
     {
-        using strides_type = typename T::strides_type;
         strides_type strides = xtl::make_sequence<strides_type>(m_e.dimension() - integral_count<S...>(), 0);
 
         auto func = [](const auto& s) { return xt::step_size(s); };

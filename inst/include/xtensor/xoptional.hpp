@@ -21,11 +21,6 @@
 namespace xt
 {
 
-    using xtl::xoptional;
-    using xtl::missing;
-    using xtl::disable_xoptional;
-    using xtl::enable_xoptional;
-
     /****************************************************
      * Metafunction for splitting xoptional expressions *
      ****************************************************/
@@ -33,10 +28,10 @@ namespace xt
     namespace detail
     {
         template <class CT, class CB>
-        struct functor_return_type<xoptional<CT, CB>, bool>
+        struct functor_return_type<xtl::xoptional<CT, CB>, bool>
         {
-            using type = ::xtl::xoptional<bool>;
-            using simd_type = ::xtl::xoptional<bool>;
+            using type = xtl::xoptional<bool>;
+            using simd_type = xtl::xoptional<bool>;
         };
 
         template <class T, class Tag>
@@ -56,6 +51,83 @@ namespace xt
             {
                 return ones<bool>(arg.shape());
             }
+        };
+
+        template <class T, class Tag>
+        struct split_optional_expression_impl<xscalar<T>, Tag>
+        {
+            using value_expression = xscalar<T>;
+            using flag_expression = xscalar<bool>;
+
+            template <class U>
+            static inline U&& value(U&& arg)
+            {
+                return std::forward<U>(arg);
+            }
+
+            template <class U>
+            static inline flag_expression has_value(U&&)
+            {
+                return xscalar<bool>(true);
+            }
+        };
+
+        template <class T, bool is_const, bool is_ref>
+        struct split_optional_scalar
+        {
+            using raw_value_closure = typename T::value_closure;
+            using raw_flag_closure = typename T::flag_closure;
+            using cst_value_closure = std::conditional_t<is_const,
+                                                         std::add_const_t<raw_value_closure>,
+                                                         raw_value_closure>;
+            using cst_flag_closure = std::conditional_t<is_const,
+                                                        std::add_const_t<raw_flag_closure>,
+                                                        raw_flag_closure>;
+            using value_closure = std::conditional_t<is_ref,
+                                                     std::add_lvalue_reference_t<cst_value_closure>,
+                                                     cst_value_closure>;
+            using flag_closure = std::conditional_t<is_ref,
+                                                    std::add_lvalue_reference_t<cst_flag_closure>,
+                                                    cst_flag_closure>;
+            using value_expression = xscalar<value_closure>;
+            using flag_expression = xscalar<flag_closure>;
+
+            template <class U>
+            static inline value_expression value(U&& arg)
+            {
+                return arg().value();
+            }
+
+            template <class U>
+            static inline flag_expression has_value(U&& arg)
+            {
+                return arg().has_value();
+            }
+
+        };
+
+        template <class T, class B, class Tag>
+        struct split_optional_expression_impl<xscalar<xtl::xoptional<T, B>>, Tag>
+            : split_optional_scalar<xtl::xoptional<T, B>, false, false>
+        {
+        };
+
+        template <class T, class B, class Tag>
+        struct split_optional_expression_impl<xscalar<xtl::xoptional<T, B>&>, Tag>
+            : split_optional_scalar<xtl::xoptional<T, B>, false, true>
+        {
+        };
+
+        template <class T, class B, class Tag>
+        struct split_optional_expression_impl<xscalar<const xtl::xoptional<T, B>&>, Tag>
+            : split_optional_scalar<xtl::xoptional<T, B>, true, true>
+        {
+        };
+
+        template <class T, class B, class Tag>
+        struct split_optional_expression_impl<xscalar<const xtl::xoptional<T, B>>, Tag>
+            : split_optional_scalar<xtl::xoptional<T, B>, true, false>
+        {
         };
 
         template <class T>
@@ -243,12 +315,12 @@ namespace xt
      **********************/
 
     template <class T, class B>
-    auto sign(const xoptional<T, B>& e);
+    auto sign(const xtl::xoptional<T, B>& e);
 
-    template <class E>
+    template <class E, XTENSOR_REQUIRE<is_xexpression<E>::value>>
     detail::value_expression_t<E> value(E&&);
 
-    template <class E>
+    template <class E, XTENSOR_REQUIRE<is_xexpression<E>::value>>
     detail::flag_expression_t<E> has_value(E&&);
 
     template <>
@@ -266,139 +338,40 @@ namespace xt
 
 #define DL DEFAULT_LAYOUT
 
+    /**
+     * @class xoptional_function
+     * @brief Multidimensional function operating on
+     * xoptional expressions.
+     *
+     * The xoptional_function class implements a multidimensional function
+     * operating on xoptional expressions.
+     *
+     * @tparam F the function type
+     * @tparam R the return type of the function
+     * @tparam CT the closure types for arguments of the function
+     */
     template <class F, class R, class... CT>
-    class xoptional_function : public xexpression<xoptional_function<F, R, CT...>>,
-                               private xconst_iterable<xfunction<F, R, CT...>>
+    class xoptional_function : public xfunction_base<F, R, CT...>,
+                               public xexpression<xoptional_function<F, R, CT...>>
     {
     public:
 
         using self_type = xoptional_function<F, R, CT...>;
-        using implementation_type = xfunction<F, R, CT...>;
-
-        // Delegating to xfunction. Private inheritance and using declarations
-        // lead to ambiguous call when the function parameter is xexpression<E>
-        // on gcc: the compiler can't choose between xexpression<xoptional_function>
-        // and xexpression<xfunction>.
-
-        using only_scalar = typename implementation_type::only_scalar;
-        using functor_type = typename implementation_type::functor_type;
-        using value_type = typename implementation_type::value_type;
-        using reference = typename implementation_type::reference;
-        using const_reference = typename implementation_type::const_reference;
-        using pointer = typename implementation_type::pointer;
-        using const_pointer = typename implementation_type::const_pointer;
-        using size_type = typename implementation_type::size_type;
-        using difference_type = typename implementation_type::difference_type;
-        using simd_value_type = typename implementation_type::simd_value_type;
-        using iterable_base = xconst_iterable<xfunction<F, R, CT...>>;
-        using inner_shape_type = typename iterable_base::inner_shape_type;
-        using shape_type = inner_shape_type;
-
-        using stepper = typename iterable_base::stepper;
-        using const_stepper = typename iterable_base::const_stepper;
-
-        static constexpr layout_type static_layout = implementation_type::static_layout;
-        static constexpr bool contiguous_layout = implementation_type::contiguous_layout;
-
-        template <layout_type L>
-        using layout_iterator = typename iterable_base::template layout_iterator<L>;
-        template <layout_type L>
-        using const_layout_iterator = typename iterable_base::template const_layout_iterator<L>;
-        template <layout_type L>
-        using reverse_layout_iterator = typename iterable_base::template reverse_layout_iterator<L>;
-        template <layout_type L>
-        using const_reverse_layout_iterator = typename iterable_base::template const_reverse_layout_iterator<L>;
-
-        template <class S, layout_type L>
-        using broadcast_iterator = typename iterable_base::template broadcast_iterator<S, L>;
-        template <class S, layout_type L>
-        using const_broadcast_iterator = typename iterable_base::template const_broadcast_iterator<S, L>;
-        template <class S, layout_type L>
-        using reverse_broadcast_iterator = typename iterable_base::template reverse_broadcast_iterator<S, L>;
-        template <class S, layout_type L>
-        using const_reverse_broadcast_iterator = typename iterable_base::template const_reverse_broadcast_iterator<S, L>;
-
-        using storage_iterator = typename implementation_type::storage_iterator;
-        using const_storage_iterator = typename implementation_type::const_storage_iterator;
-        using reverse_storage_iterator = typename implementation_type::reverse_storage_iterator;
-        using const_reverse_storage_iterator = typename implementation_type::const_reverse_storage_iterator;
-
-        using iterator = typename iterable_base::iterator;
-        using const_iterator = typename iterable_base::const_iterator;
-        using reverse_iterator = typename iterable_base::reverse_iterator;
-        using const_reverse_iterator = typename iterable_base::const_reverse_iterator;
-
-        template <class Func>
-        xoptional_function(Func&& func, CT... e) noexcept;
-
-        size_type size() const noexcept;
-        size_type dimension() const noexcept;
-        const shape_type& shape() const;
-        layout_type layout() const noexcept;
-
-        template <class... Args>
-        const_reference operator()(Args... args) const;
-
-        template <class... Args>
-        const_reference at(Args... args) const;
-
-        const_reference operator[](const xindex& index) const;
-        const_reference operator[](size_type i) const;
-
-        template <class It>
-        const_reference element(It first, It last) const;
-
-        template <class S>
-        bool broadcast_shape(S& shape) const;
-
-        template <class S>
-        bool is_trivial_broadcast(const S& strides) const noexcept;
-
-        using iterable_base::begin;
-        using iterable_base::end;
-        using iterable_base::cbegin;
-        using iterable_base::cend;
-        using iterable_base::rbegin;
-        using iterable_base::rend;
-        using iterable_base::crbegin;
-        using iterable_base::crend;
-
-        template <layout_type L = DL>
-        const_storage_iterator storage_begin() const noexcept;
-        template <layout_type L = DL>
-        const_storage_iterator storage_end() const noexcept;
-        template <layout_type L = DL>
-        const_storage_iterator storage_cbegin() const noexcept;
-        template <layout_type L = DL>
-        const_storage_iterator storage_cend() const noexcept;
-
-        template <layout_type L = DL>
-        const_reverse_storage_iterator storage_rbegin() const noexcept;
-        template <layout_type L = DL>
-        const_reverse_storage_iterator storage_rend() const noexcept;
-        template <layout_type L = DL>
-        const_reverse_storage_iterator storage_crbegin() const noexcept;
-        template <layout_type L = DL>
-        const_reverse_storage_iterator storage_crend() const noexcept;
-
-        template <class S>
-        const_stepper stepper_begin(const S& shape) const noexcept;
-        template <class S>
-        const_stepper stepper_end(const S& shape, layout_type l) const noexcept;
-
-        const_reference data_element(size_type i) const;
-
-        template <class UT = self_type, class = typename std::enable_if<UT::only_scalar::value>::type>
-        operator value_type() const;
-
-        template <class align, class simd = simd_value_type>
-        detail::simd_return_type_t<functor_type, simd> load_simd(size_type i) const;
-
-        // Specific to xoptional_function
-
+        using base_type = xfunction_base<F, R, CT...>;
         using expression_tag = xoptional_expression_tag;
         using value_functor = typename F::template rebind<typename R::value_type>::type;
         using flag_functor = detail::optional_bitwise<bool>;
+
+        template <class Func, class U = std::enable_if<!std::is_base_of<Func, self_type>::value>>
+        xoptional_function(Func&& func, CT... e) noexcept;
+
+        ~xoptional_function() = default;
+
+        xoptional_function(const xoptional_function&) = default;
+        xoptional_function& operator=(const xoptional_function&) = default;
+
+        xoptional_function(xoptional_function&&) = default;
+        xoptional_function& operator=(xoptional_function&&) = default;
 
         using value_expression = xfunction<value_functor,
                                            typename R::value_type,
@@ -413,8 +386,6 @@ namespace xt
 
     private:
 
-        implementation_type m_func;
-
         template <std::size_t... I>
         value_expression value_impl(std::index_sequence<I...>) const;
 
@@ -428,174 +399,17 @@ namespace xt
      * xoptional_function implementation *
      *************************************/
 
+     /**
+      * Constructs an xoptional_function applying the specified function to the given
+      * arguments.
+      * @param func the function to apply
+      * @param e the \ref xexpression arguments
+      */
     template <class F, class R, class... CT>
-    template <class Func>
+    template <class Func, class U>
     inline xoptional_function<F, R, CT...>::xoptional_function(Func&& func, CT... e) noexcept
-        : m_func(std::forward<Func>(func), e...)
+        : base_type(std::forward<Func>(func), e...)
     {
-    }
-
-    template <class F, class R, class... CT>
-    inline auto xoptional_function<F, R, CT...>::size() const noexcept -> size_type
-    {
-        return m_func.size();
-    }
-
-    template <class F, class R, class... CT>
-    inline auto xoptional_function<F, R, CT...>::dimension() const noexcept -> size_type
-    {
-        return m_func.dimension();
-    }
-
-    template <class F, class R, class... CT>
-    inline auto xoptional_function<F, R, CT...>::shape() const -> const shape_type&
-    {
-        return m_func.shape();
-    }
-
-    template <class F, class R, class... CT>
-    inline auto xoptional_function<F, R, CT...>::layout() const noexcept -> layout_type
-    {
-        return m_func.layout();
-    }
-
-    template <class F, class R, class... CT>
-    template <class... Args>
-    inline auto xoptional_function<F, R, CT...>::operator()(Args... args) const -> const_reference
-    {
-        return m_func(args...);
-    }
-
-    template <class F, class R, class... CT>
-    template <class... Args>
-    inline auto xoptional_function<F, R, CT...>::at(Args... args) const -> const_reference
-    {
-        return m_func.at(args...);
-    }
-
-    template <class F, class R, class... CT>
-    inline auto xoptional_function<F, R, CT...>::operator[](const xindex& index) const -> const_reference
-    {
-        return m_func[index];
-    }
-
-    template <class F, class R, class... CT>
-    inline auto xoptional_function<F, R, CT...>::operator[](size_type i) const -> const_reference
-    {
-        return m_func[i];
-    }
-
-
-    template <class F, class R, class... CT>
-    template <class It>
-    inline auto xoptional_function<F, R, CT...>::element(It first, It last) const -> const_reference
-    {
-        return m_func.element(first, last);
-    }
-
-
-    template <class F, class R, class... CT>
-    template <class S>
-    bool xoptional_function<F, R, CT...>::broadcast_shape(S& shape) const
-    {
-        return m_func.broadcast_shape(shape);
-    }
-
-    template <class F, class R, class... CT>
-    template <class S>
-    bool xoptional_function<F, R, CT...>::is_trivial_broadcast(const S& strides) const noexcept
-    {
-        return m_func.is_trivial_broadcast(strides);
-    }
-
-    template <class F, class R, class... CT>
-    template <layout_type L>
-    inline auto xoptional_function<F, R, CT...>::storage_begin() const noexcept -> const_storage_iterator
-    {
-        return m_func.template storage_begin<L>();
-    }
-
-    template <class F, class R, class... CT>
-    template <layout_type L>
-    inline auto xoptional_function<F, R, CT...>::storage_end() const noexcept -> const_storage_iterator
-    {
-        return m_func.template storage_end<L>();
-    }
-
-    template <class F, class R, class... CT>
-    template <layout_type L>
-    inline auto xoptional_function<F, R, CT...>::storage_cbegin() const noexcept -> const_storage_iterator
-    {
-        return m_func.template storage_cbegin<L>();
-    }
-
-    template <class F, class R, class... CT>
-    template <layout_type L>
-    inline auto xoptional_function<F, R, CT...>::storage_cend() const noexcept -> const_storage_iterator
-    {
-        return m_func.template storage_cend<L>();
-    }
-
-    template <class F, class R, class... CT>
-    template <layout_type L>
-    inline auto xoptional_function<F, R, CT...>::storage_rbegin() const noexcept -> const_reverse_storage_iterator
-    {
-        return m_func.template storage_rbegin<L>();
-    }
-
-    template <class F, class R, class... CT>
-    template <layout_type L>
-    inline auto xoptional_function<F, R, CT...>::storage_rend() const noexcept -> const_reverse_storage_iterator
-    {
-        return m_func.template storage_rend<L>();
-    }
-
-    template <class F, class R, class... CT>
-    template <layout_type L>
-    inline auto xoptional_function<F, R, CT...>::storage_crbegin() const noexcept -> const_reverse_storage_iterator
-    {
-        return m_func.template storage_crbegin<L>();
-    }
-
-    template <class F, class R, class... CT>
-    template <layout_type L>
-    inline auto xoptional_function<F, R, CT...>::storage_crend() const noexcept -> const_reverse_storage_iterator
-    {
-        return m_func.template storage_crend<L>();
-    }
-
-    template <class F, class R, class... CT>
-    template <class S>
-    inline auto xoptional_function<F, R, CT...>::stepper_begin(const S& shape) const noexcept -> const_stepper
-    {
-        return m_func.stepper_begin(shape);
-    }
-
-    template <class F, class R, class... CT>
-    template <class S>
-    inline auto xoptional_function<F, R, CT...>::stepper_end(const S& shape, layout_type l) const noexcept -> const_stepper
-    {
-        return m_func.stepper_end(shape, l);
-    }
-
-    template <class F, class R, class... CT>
-    inline auto xoptional_function<F, R, CT...>::data_element(size_type i) const -> const_reference
-    {
-        return m_func.data_element(i);
-    }
-
-    template <class F, class R, class... CT>
-    template <class UT, class>
-    inline xoptional_function<F, R, CT...>::operator value_type() const
-    {
-        return operator()();
-    }
-
-    template <class F, class R, class... CT>
-    template <class align, class simd>
-    inline auto xoptional_function<F, R, CT...>::load_simd(size_type i) const -> detail::simd_return_type_t<functor_type, simd>
-    {
-        return m_func.template load_simd<align, simd>(i);
     }
 
     template <class F, class R, class... CT>
@@ -615,7 +429,7 @@ namespace xt
     inline auto xoptional_function<F, R, CT...>::value_impl(std::index_sequence<I...>) const -> value_expression
     {
         return value_expression(value_functor(),
-            detail::split_optional_expression<CT>::value(std::forward<CT>(std::get<I>(m_func.arguments())))...);
+            detail::split_optional_expression<CT>::value(std::get<I>(this->arguments()))...);
     }
 
     template <class F, class R, class... CT>
@@ -623,7 +437,7 @@ namespace xt
     inline auto xoptional_function<F, R, CT...>::has_value_impl(std::index_sequence<I...>) const -> flag_expression
     {
         return flag_expression(flag_functor(),
-            detail::split_optional_expression<CT>::has_value(std::forward<CT>(std::get<I>(m_func.arguments())))...);
+            detail::split_optional_expression<CT>::has_value(std::get<I>(this->arguments()))...);
     }
 
     /********************************
@@ -633,15 +447,15 @@ namespace xt
     namespace math
     {
         template <class T, class B>
-        struct sign_fun<xoptional<T, B>>
+        struct sign_fun<xtl::xoptional<T, B>>
         {
-            using argument_type = xoptional<T, B>;
-            using result_type = xoptional<std::decay_t<T>>;
+            using argument_type = xtl::xoptional<T, B>;
+            using result_type = xtl::xoptional<std::decay_t<T>>;
 
-            constexpr result_type operator()(const xoptional<T, B>& x) const
+            constexpr result_type operator()(const xtl::xoptional<T, B>& x) const
             {
-                return x.has_value() ? xoptional<T>(detail::sign_impl(x.value()))
-                                     : missing<std::decay_t<T>>();
+                return x.has_value() ? xtl::xoptional<T>(detail::sign_impl(x.value()))
+                                     : xtl::missing<std::decay_t<T>>();
             }
 
             template <class U>
@@ -653,22 +467,22 @@ namespace xt
     }
 
     template <class T, class B>
-    inline auto sign(const xoptional<T, B>& e)
+    inline auto sign(const xtl::xoptional<T, B>& e)
     {
-        return e.has_value() ? math::detail::sign_impl(e.value()) : missing<std::decay_t<T>>();
+        return e.has_value() ? math::detail::sign_impl(e.value()) : xtl::missing<std::decay_t<T>>();
     }
 
     /******************************************
      * value() and has_value() implementation *
      ******************************************/
 
-    template <class E>
+    template <class E, class>
     inline auto value(E&& e) -> detail::value_expression_t<E>
     {
         return detail::split_optional_expression<E>::value(std::forward<E>(e));
     }
 
-    template <class E>
+    template <class E, class>
     inline auto has_value(E&& e) -> detail::flag_expression_t<E>
     {
         return detail::split_optional_expression<E>::has_value(std::forward<E>(e));
@@ -680,26 +494,10 @@ namespace xt
         E1& de1 = e1.derived_cast();
         const E2& de2 = e2.derived_cast();
 
-        bool trivial_broadcast = trivial && detail::is_trivial_broadcast(de1, de2);
-        if (trivial_broadcast)
-        {
-            using base_value_type1 = typename std::decay_t<decltype(value(de1))>::value_type;
-            using base_value_type2 = typename std::decay_t<decltype(value(de2))>::value_type;
-            constexpr bool contiguous_layout = E1::contiguous_layout && E2::contiguous_layout;
-            constexpr bool same_type = std::is_same<base_value_type1, base_value_type2>::value;
-            constexpr bool simd_size = xsimd::simd_traits<base_value_type1>::size > 1;
-            constexpr bool forbid_simd = detail::forbid_simd_assign<E2>::value;
-            constexpr bool simd_assign = contiguous_layout && same_type && simd_size && !forbid_simd;
-            decltype(auto) bde1 = value(de1);
-            decltype(auto) hde1 = has_value(de1);
-            trivial_assigner<simd_assign>::run(bde1, value(de2));
-            trivial_assigner<false>::run(hde1, has_value(de2));
-        }
-        else
-        {
-            data_assigner<E1, E2, default_assignable_layout(E1::static_layout)> assigner(de1, de2);
-            assigner.run();
-        }
+        decltype(auto) bde1 = xt::value(de1);
+        decltype(auto) hde1 = xt::has_value(de1);
+        xexpression_assigner_base<xtensor_expression_tag>::assign_data(bde1, xt::value(de2), trivial);
+        xexpression_assigner_base<xtensor_expression_tag>::assign_data(hde1, xt::has_value(de2), trivial);
     }
 }
 

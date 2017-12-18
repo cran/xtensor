@@ -6,11 +6,13 @@
 * The full license is in the file LICENSE, distributed with this software. *
 ****************************************************************************/
 
-#ifndef XTl_XMETA_UTILS_HPP
+#ifndef XTL_XMETA_UTILS_HPP
 #define XTL_XMETA_UTILS_HPP
 
 #include <cstddef>
 #include <type_traits>
+
+#include "xfunctional.hpp"
 
 namespace xtl
 {
@@ -50,6 +52,30 @@ namespace xtl
 
         template <class B, class T, class F>
         using if_t = typename if_<B, T, F>::type;
+
+        /***********
+         * eval_if *
+         ***********/
+
+        template <bool B, class T, class F>
+        struct eval_if_c
+        {
+            using type = typename T::type;
+        };
+
+        template <class T, class F>
+        struct eval_if_c<false, T, F>
+        {
+            using type = typename F::type;
+        };
+
+        template <class B, class T, class F>
+        struct eval_if : eval_if_c<B::value, T, F>
+        {
+        };
+
+        template <class B, class T, class F>
+        using eval_if_t = typename eval_if<B, T, F>::type;
 
         /********
          * cast *
@@ -428,6 +454,28 @@ namespace xtl
 
         template <class S1, class S2>
         using merge_set_t = typename merge_set<S1, S2>::type;
+
+        /*************
+         * static_if *
+         *************/
+
+        template <class TF, class FF>
+        auto static_if(std::true_type, const TF& tf, const FF&)
+        {
+            return tf(identity());
+        }
+
+        template <class TF, class FF>
+        auto static_if(std::false_type, const TF&, const FF& ff)
+        {
+            return ff(identity());
+        }
+
+        template <bool cond, class TF, class FF>
+        auto static_if(const TF& tf, const FF& ff)
+        {
+            return static_if(std::integral_constant<bool, cond>(), tf, ff);
+        }
     }
 }
 

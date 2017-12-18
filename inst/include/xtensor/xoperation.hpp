@@ -15,8 +15,8 @@
 
 #include "xtl/xsequence.hpp"
 
+#include "xconcepts.hpp"
 #include "xfunction.hpp"
-//#include "xoptional.hpp"
 #include "xscalar.hpp"
 #include "xstrides.hpp"
 
@@ -119,6 +119,7 @@ namespace xt
         BINARY_OPERATOR_FUNCTOR(minus, -);
         BINARY_OPERATOR_FUNCTOR(multiplies, *);
         BINARY_OPERATOR_FUNCTOR(divides, /);
+        BINARY_OPERATOR_FUNCTOR(modulus, %);
         BINARY_BOOL_OPERATOR_FUNCTOR(logical_or, ||);
         BINARY_BOOL_OPERATOR_FUNCTOR(logical_and, &&);
         UNARY_BOOL_OPERATOR_FUNCTOR(logical_not, !);
@@ -188,6 +189,12 @@ namespace xt
         struct select_xfunction_expression;
 
         template <class F, class... E>
+        struct select_xfunction_expression<xscalar_expression_tag, F, E...>
+        {
+            using type = typename select_xfunction_expression<xtensor_expression_tag, F, E...>::type;
+        };
+
+        template <class F, class... E>
         struct select_xfunction_expression<xtensor_expression_tag, F, E...>
         {
             using type = xfunction<F, typename F::result_type, E...>;
@@ -204,6 +211,12 @@ namespace xt
 
         template <class Tag, template <class...> class F, class... E>
         struct build_functor_type;
+
+        template <template <class...> class F, class... E>
+        struct build_functor_type<xscalar_expression_tag, F, E...>
+        {
+            using type = typename build_functor_type<xtensor_expression_tag, F, E...>::type;
+        };
 
         template <template <class...> class F, class... E>
         struct build_functor_type<xtensor_expression_tag, F, E...>
@@ -363,6 +376,23 @@ namespace xt
         return detail::make_xfunction<detail::divides>(std::forward<E1>(e1), std::forward<E2>(e2));
     }
 
+    /**
+     * @ingroup arithmetic_operators
+     * @brief Modulus
+     *
+     * Returns an \ref xfunction for the element-wise modulus
+     * of \a e1 by \a e2.
+     * @param e1 an \ref xexpression or a scalar
+     * @param e2 an \ref xexpression or a scalar
+     * @return an \ref xfunction
+     */
+    template <class E1, class E2>
+    inline auto operator%(E1&& e1, E2&& e2) noexcept
+    -> detail::xfunction_type_t<detail::modulus, E1, E2>
+    {
+        return detail::make_xfunction<detail::modulus>(std::forward<E1>(e1), std::forward<E2>(e2));
+    }
+    
     /**
      * @defgroup logical_operators Logical operators
      */
@@ -572,7 +602,8 @@ namespace xt
      * @return a boolean
      */
     template <class E1, class E2>
-    inline bool operator==(const xexpression<E1>& e1, const xexpression<E2>& e2)
+    inline std::enable_if_t<xoptional_comparable<E1, E2>::value, bool>
+    operator==(const xexpression<E1>& e1, const xexpression<E2>& e2)
     {
         const E1& de1 = e1.derived_cast();
         const E2& de2 = e2.derived_cast();

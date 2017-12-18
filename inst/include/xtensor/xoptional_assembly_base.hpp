@@ -14,9 +14,6 @@
 
 namespace xt
 {
-    using xtl::xoptional;
-    using xtl::xclosure_pointer;
-
     template <class D, bool is_const>
     class xoptional_assembly_stepper;
 
@@ -60,11 +57,11 @@ namespace xt
         using flag_reference = typename flag_expression::reference;
         using flag_const_reference = typename flag_expression::const_reference;
 
-        using value_type = xoptional<base_value_type, flag_type>;
-        using reference = xoptional<base_reference, flag_reference>;
-        using const_reference = xoptional<base_const_reference, flag_const_reference>;
-        using pointer = xclosure_pointer<reference>;
-        using const_pointer = xclosure_pointer<const_reference>;
+        using value_type = xtl::xoptional<base_value_type, flag_type>;
+        using reference = xtl::xoptional<base_reference, flag_reference>;
+        using const_reference = xtl::xoptional<base_const_reference, flag_const_reference>;
+        using pointer = xtl::xclosure_pointer<reference>;
+        using const_pointer = xtl::xclosure_pointer<const_reference>;
         using size_type = typename value_expression::size_type;
         using difference_type = typename value_expression::difference_type;
         using simd_value_type = xsimd::simd_type<value_type>;
@@ -142,9 +139,16 @@ namespace xt
         template <class... Args>
         const_reference at(Args... args) const;
 
-        reference operator[](const xindex& index);
+        template <class S>
+        disable_integral_t<S, reference> operator[](const S& index);
+        template <class I>
+        reference operator[](std::initializer_list<I> index);
         reference operator[](size_type i);
-        const_reference operator[](const xindex& index) const;
+
+        template <class S>
+        disable_integral_t<S, const_reference> operator[](const S& index) const;
+        template <class I>
+        const_reference operator[](std::initializer_list<I> index) const;
         const_reference operator[](size_type i) const;
 
         template <class It>
@@ -521,7 +525,17 @@ namespace xt
      * than the number of dimensions of the optional assembly.
      */
     template <class D>
-    inline auto xoptional_assembly_base<D>::operator[](const xindex& index) -> reference
+    template <class S>
+    inline auto xoptional_assembly_base<D>::operator[](const S& index)
+        -> disable_integral_t<S, reference>
+    {
+        return reference(value()[index], has_value()[index]);
+    }
+
+    template <class D>
+    template <class I>
+    inline auto xoptional_assembly_base<D>::operator[](std::initializer_list<I> index)
+        -> reference
     {
         return reference(value()[index], has_value()[index]);
     }
@@ -539,7 +553,17 @@ namespace xt
      * than the number of dimensions of the optional assembly.
      */
     template <class D>
-    inline auto xoptional_assembly_base<D>::operator[](const xindex& index) const -> const_reference
+    template <class S>
+    inline auto xoptional_assembly_base<D>::operator[](const S& index) const
+        -> disable_integral_t<S, const_reference>
+    {
+        return const_reference(value()[index], has_value()[index]);
+    }
+
+    template <class D>
+    template <class I>
+    inline auto xoptional_assembly_base<D>::operator[](std::initializer_list<I> index) const
+        -> const_reference
     {
         return const_reference(value()[index], has_value()[index]);
     }
