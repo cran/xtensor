@@ -17,8 +17,10 @@
 #include <random>
 #include <utility>
 
-#include "xtensor.hpp"
+#include "xbuilder.hpp"
 #include "xgenerator.hpp"
+#include "xtensor.hpp"
+#include "xview.hpp"
 
 namespace xt
 {
@@ -39,7 +41,7 @@ namespace xt
                   E& engine = random::get_default_random_engine());
 
         template <class T, class S, class E = random::default_engine_type>
-        auto randint(const S& shape, T lower = 0, T upper = std::numeric_limits<T>::max(),
+        auto randint(const S& shape, T lower = 0, T upper = (std::numeric_limits<T>::max)(),
                      E& engine = random::get_default_random_engine());
 
         template <class T, class S, class E = random::default_engine_type>
@@ -53,7 +55,7 @@ namespace xt
 
         template <class T, class I, class E = random::default_engine_type>
         auto randint(std::initializer_list<I> shape,
-                     T lower = 0, T upper = std::numeric_limits<T>::max(),
+                     T lower = 0, T upper = (std::numeric_limits<T>::max)(),
                      E& engine = random::get_default_random_engine());
 
         template <class T, class I, class E = random::default_engine_type>
@@ -65,13 +67,16 @@ namespace xt
                   E& engine = random::get_default_random_engine());
 
         template <class T, class I, std::size_t L, class E = random::default_engine_type>
-        auto randint(const I (&shape)[L], T lower = 0, T upper = std::numeric_limits<T>::max(),
+        auto randint(const I (&shape)[L], T lower = 0, T upper = (std::numeric_limits<T>::max)(),
                      E& engine = random::get_default_random_engine());
 
         template <class T, class I, std::size_t L, class E = random::default_engine_type>
         auto randn(const I (&shape)[L], T mean = 0, T std_dev = 1,
                    E& engine = random::get_default_random_engine());
 #endif
+
+        template <class T, class E = random::default_engine_type>
+        void shuffle(xexpression<T>& e, E& engine = random::get_default_random_engine());
 
         template <class T, class E = random::default_engine_type>
         xtensor<typename T::value_type, 1> choice(const xexpression<T>& e, std::size_t n,
@@ -230,6 +235,39 @@ namespace xt
 #endif
 
         /**
+         * Randomly shuffle elements inplace in xcontainer along first axis.
+         * The order of sub-arrays is changed but their contents remain the same.
+         *
+         * @param e xcontainer to shuffle inplace
+         * @param engine random number engine
+         */
+        template <class T, class E>
+        void shuffle(xexpression<T>& e, E& engine)
+        {
+            T& de = e.derived_cast();
+
+            if (de.dimension() == 1)
+            {
+                std::shuffle(de.storage().begin(), de.storage().end(), engine);
+            }
+            else
+            {
+                using size_type = typename T::size_type;
+                decltype(auto) buf = empty_like(view(de, 0));
+
+                for (std::size_t i = de.shape()[0] - 1; i > 0; --i)
+                {
+                    std::uniform_int_distribution<size_type> dist(0, i);
+                    size_type j = dist(engine);
+
+                    buf = view(de, j);
+                    view(de, j) = view(de, i);
+                    view(de, i) = buf;
+                }
+            }
+        }
+
+        /**
          * Randomly select n unique elements from xexpression e.
          * Note: this function makes a copy of your data, and only 1D data is accepted.
          *
@@ -246,12 +284,12 @@ namespace xt
             XTENSOR_ASSERT(de.dimension() == 1);
             XTENSOR_ASSERT(de.size() >= n);
             xtensor<typename T::value_type, 1> result;
-            result.reshape({n});
+            result.resize({n});
 
             xtensor<typename T::value_type, 1> shuffled = de;
-            shuffle(shuffled.data().begin(), shuffled.data().end(), engine);
+            std::shuffle(shuffled.storage().begin(), shuffled.storage().end(), engine);
 
-            std::copy(shuffled.data().begin(), shuffled.data().begin() + n, result.begin());
+            std::copy(shuffled.storage().begin(), shuffled.storage().begin() + n, result.begin());
 
             return result;
 

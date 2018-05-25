@@ -80,14 +80,14 @@ namespace xt
 
         using base_type = xcontainer<D>;
         using inner_types = xcontainer_inner_types<D>;
-        using container_type = typename inner_types::container_type;
-        using value_type = typename container_type::value_type;
-        using reference = typename container_type::reference;
-        using const_reference = typename container_type::const_reference;
-        using pointer = typename container_type::pointer;
-        using const_pointer = typename container_type::const_pointer;
-        using size_type = typename container_type::size_type;
-        using difference_type = typename container_type::difference_type;
+        using storage_type = typename inner_types::storage_type;
+        using value_type = typename storage_type::value_type;
+        using reference = typename storage_type::reference;
+        using const_reference = typename storage_type::const_reference;
+        using pointer = typename storage_type::pointer;
+        using const_pointer = typename storage_type::const_pointer;
+        using size_type = typename storage_type::size_type;
+        using difference_type = typename storage_type::difference_type;
 
         using shape_type = typename inner_types::shape_type;
         using strides_type = typename inner_types::strides_type;
@@ -106,7 +106,10 @@ namespace xt
         static constexpr layout_type static_layout = layout_type::column_major;
         static constexpr bool contiguous_layout = true;
 
-        template <class S>
+        template <class S = shape_type>
+        void resize(S&& shape);
+
+        template <class S = shape_type>
         void reshape(S&& shape);
 
         layout_type layout() const;
@@ -132,6 +135,11 @@ namespace xt
 
         rcontainer(rcontainer&&) = default;
         rcontainer& operator=(rcontainer&&) = default;
+
+        // TODO: remove these once xcontainer::derived_cast is protected.
+        derived_type& derived_cast() & noexcept;
+        const derived_type& derived_cast() const & noexcept;
+        derived_type derived_cast() && noexcept;
 
     private:
 
@@ -170,6 +178,21 @@ namespace xt
     }
 
     /**
+     * Resizes the container.
+     * @param shape the new shape
+     */
+    template <class D>
+    template <class S>
+    inline void rcontainer<D>::resize(S&& shape)
+    {
+        if (shape.size() != this->dimension() || !std::equal(std::begin(shape), std::end(shape), this->shape().cbegin()))
+        {
+            derived_type tmp(std::forward<S>(shape));
+            *static_cast<derived_type*>(this) = std::move(tmp);
+        }
+    }
+
+    /**
      * Reshapes the container.
      * @param shape the new shape
      */
@@ -177,10 +200,16 @@ namespace xt
     template <class S>
     inline void rcontainer<D>::reshape(S&& shape)
     {
+        if (compute_size(shape) != this->size())
+        {
+            throw std::runtime_error("Cannot reshape with incorrect number of elements.");
+        }
+
         if (shape.size() != this->dimension() || !std::equal(std::begin(shape), std::end(shape), this->shape().cbegin()))
         {
-            derived_type tmp(std::forward<S>(shape));
-            *static_cast<derived_type*>(this) = std::move(tmp);
+            auto tmp_shape = Rcpp::IntegerVector(std::begin(shape), std::end(shape));
+            Rf_setAttrib(m_sexp, R_DimSymbol, SEXP(tmp_shape));
+            this->derived_cast().set_shape();
         }
     }
 
@@ -194,6 +223,24 @@ namespace xt
     inline rcontainer<D>::operator SEXP() const
     {
         return m_sexp;
+    }
+
+    template <class D>
+    inline auto rcontainer<D>::derived_cast() & noexcept -> derived_type&
+    {
+        return *static_cast<derived_type*>(this);
+    }
+
+    template <class D>
+    inline auto rcontainer<D>::derived_cast() const & noexcept -> const derived_type&
+    {
+        return *static_cast<const derived_type*>(this);
+    }
+
+    template <class D>
+    inline auto rcontainer<D>::derived_cast() && noexcept -> derived_type
+    {
+        return *static_cast<derived_type*>(this);
     }
 }
 

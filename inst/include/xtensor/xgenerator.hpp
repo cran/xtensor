@@ -16,7 +16,7 @@
 #include <type_traits>
 #include <utility>
 
-#include "xtl/xsequence.hpp"
+#include <xtl/xsequence.hpp>
 
 #include "xexpression.hpp"
 #include "xiterable.hpp"
@@ -37,7 +37,7 @@ namespace xt
     struct xiterable_inner_types<xgenerator<C, R, S>>
     {
         using inner_shape_type = S;
-        using const_stepper = xindexed_stepper<xgenerator<C, R, S>>;
+        using const_stepper = xindexed_stepper<xgenerator<C, R, S>, true>;
         using stepper = const_stepper;
     };
 
@@ -102,7 +102,7 @@ namespace xt
         const_reference element(It first, It last) const;
 
         template <class O>
-        bool broadcast_shape(O& shape) const;
+        bool broadcast_shape(O& shape, bool reuse_cache = false) const;
 
         template <class O>
         bool is_trivial_broadcast(const O& /*strides*/) const noexcept;
@@ -113,6 +113,12 @@ namespace xt
         const_stepper stepper_end(const O& shape, layout_type) const noexcept;
 
     private:
+
+        template <std::size_t dim>
+        void adapt_index() const;
+
+        template <std::size_t dim, class I, class... Args>
+        void adapt_index(I& arg, Args&... args) const;
 
         functor_type m_f;
         inner_shape_type m_shape;
@@ -192,7 +198,8 @@ namespace xt
     template <class... Args>
     inline auto xgenerator<F, R, S>::operator()(Args... args) const -> const_reference
     {
-        XTENSOR_ASSERT(check_index(shape(), args...));
+        XTENSOR_TRY(check_index(shape(), args...));
+        adapt_index<0>(args...);
         return m_f(args...);
     }
 
@@ -246,8 +253,9 @@ namespace xt
     template <class It>
     inline auto xgenerator<F, R, S>::element(It first, It last) const -> const_reference
     {
-        XTENSOR_ASSERT(check_element_index(shape(), first, last));
-        return m_f.element(first, last);
+        using bounded_iterator = xbounded_iterator<It, typename shape_type::const_iterator>;
+        XTENSOR_TRY(check_element_index(shape(), first, last));
+        return m_f.element(bounded_iterator(first, shape().cbegin()), bounded_iterator(last, shape().cend()));
     }
     //@}
 
@@ -262,7 +270,7 @@ namespace xt
      */
     template <class F, class R, class S>
     template <class O>
-    inline bool xgenerator<F, R, S>::broadcast_shape(O& shape) const
+    inline bool xgenerator<F, R, S>::broadcast_shape(O& shape, bool) const
     {
         return xt::broadcast_shape(m_shape, shape);
     }
@@ -294,6 +302,31 @@ namespace xt
     {
         size_type offset = shape.size() - dimension();
         return const_stepper(this, offset, true);
+    }
+
+    template <class F, class R, class S>
+    template <std::size_t dim>
+    inline void xgenerator<F, R, S>::adapt_index() const
+    {
+    }
+
+    template <class F, class R, class S>
+    template <std::size_t dim, class I, class... Args>
+    inline void xgenerator<F, R, S>::adapt_index(I& arg, Args&... args) const
+    {
+        using value_type = typename decltype(m_shape)::value_type;
+        if (sizeof...(Args) + 1 > m_shape.size())
+        {
+            adapt_index<dim>(args...);
+        }
+        else
+        {
+            if (static_cast<value_type>(arg) >= m_shape[dim] && m_shape[dim] == 1)
+            {
+                arg = 0;
+            }
+            adapt_index<dim + 1>(args...);
+        }
     }
 
     namespace detail

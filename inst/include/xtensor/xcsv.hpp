@@ -26,7 +26,10 @@ namespace xt
      **************************************/
 
     template <class T, class A = std::allocator<T>>
-    xtensor_container<std::vector<T, A>, 2> load_csv(std::istream& stream);
+    using xcsv_tensor = xtensor_container<std::vector<T, A>, 2, layout_type::row_major>;
+
+    template <class T, class A = std::allocator<T>>
+    xcsv_tensor<T, A> load_csv(std::istream& stream);
 
     template <class E>
     void dump_csv(std::ostream& stream, const xexpression<E>& e);
@@ -93,16 +96,16 @@ namespace xt
      * @param stream the input stream containing the CSV encoded values
      */
     template <class T, class A>
-    xtensor_container<std::vector<T, A>, 2> load_csv(std::istream& stream)
+    xcsv_tensor<T, A> load_csv(std::istream& stream)
     {
-        using container_type = typename std::vector<T, A>;
-        using tensor_type = xtensor_container<container_type, 2>;
+        using tensor_type = xcsv_tensor<T, A>;
+        using storage_type = typename tensor_type::storage_type;
         using size_type = typename tensor_type::size_type;
         using inner_shape_type = typename tensor_type::inner_shape_type;
         using inner_strides_type = typename tensor_type::inner_strides_type;
-        using output_iterator = std::back_insert_iterator<container_type>;
+        using output_iterator = std::back_insert_iterator<storage_type>;
 
-        container_type data;
+        storage_type data;
         size_type nbrow = 0, nbcol = 0;
         {
             output_iterator output(data);

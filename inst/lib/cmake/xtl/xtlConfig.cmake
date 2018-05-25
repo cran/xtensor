@@ -39,7 +39,7 @@ endmacro()
 
 ####################################################################################
 
-set(PN xtl)
-set_and_check(${PN}_INCLUDE_DIRS "${PACKAGE_PREFIX_DIR}/include")
-set(${PN}_LIBRARY "")
-check_required_components(${PN})
+if(NOT TARGET xtl)
+  include("${CMAKE_CURRENT_LIST_DIR}/xtlTargets.cmake")
+  get_target_property(xtl_INCLUDE_DIRS xtl INTERFACE_INCLUDE_DIRECTORIES)
+endif()

@@ -15,12 +15,15 @@
 
 #ifdef XTENSOR_USE_XSIMD
 
-#include "xsimd/xsimd.hpp"
+#include <xsimd/xsimd.hpp>
 
 #else  // XTENSOR_USE_XSIMD
 
 namespace xsimd
 {
+    template <class T, std::size_t A>
+    class aligned_allocator;
+
     struct aligned_mode
     {
     };
@@ -52,6 +55,7 @@ namespace xsimd
     {
         using type = T;
         using bool_type = bool;
+        using batch_bool = bool;
         static constexpr size_t size = 1;
     };
 
@@ -112,6 +116,9 @@ namespace xsimd
     {
         return size;
     }
+
+    template <class T1, class T2>
+    using simd_return_type = simd_type<T2>;
 }
 
 #endif  // XTENSOR_USE_XSIMD

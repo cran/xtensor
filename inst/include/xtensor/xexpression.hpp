@@ -13,15 +13,14 @@
 #include <type_traits>
 #include <vector>
 
-#include "xtl/xclosure.hpp"
-#include "xtl/xtype_traits.hpp"
+#include <xtl/xclosure.hpp>
+#include <xtl/xtype_traits.hpp>
 
+#include "xshape.hpp"
 #include "xutils.hpp"
 
 namespace xt
 {
-
-    using xindex = std::vector<std::size_t>;
 
     /***************************
      * xexpression declaration *
@@ -113,6 +112,9 @@ namespace xt
 
     template <class E>
     using is_xexpression = detail::is_xexpression_impl<E>;
+
+    template <class E, class R = void>
+    using enable_xexpression = typename std::enable_if<is_xexpression<E>::value, R>::type;
 
     template <class E, class R = void>
     using disable_xexpression = typename std::enable_if<!is_xexpression<E>::value, R>::type;
@@ -312,7 +314,7 @@ namespace xt
     template <class... T>
     struct xexpression_tag
     {
-        using type = detail::expression_tag_and_t<detail::get_expression_tag_t<T>...>;
+        using type = detail::expression_tag_and_t<detail::get_expression_tag_t<std::decay_t<const_xclosure_t<T>>>...>;
     };
 
     template <class... T>

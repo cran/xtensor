@@ -9,9 +9,9 @@
 #ifndef XTENSOR_EXCEPTION_HPP
 #define XTENSOR_EXCEPTION_HPP
 
-#include <exception>
 #include <iterator>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 
 namespace xt
@@ -21,26 +21,33 @@ namespace xt
      * broadcast_error *
      *******************/
 
-    class broadcast_error : public std::exception
+    class broadcast_error : public std::runtime_error
     {
     public:
 
-        template <class S1, class S2>
-        broadcast_error(const S1& lhs, const S2& rhs);
-
-        virtual const char* what() const noexcept;
-
-    private:
-
-        std::string m_message;
+        explicit broadcast_error(const char* msg)
+            : std::runtime_error(msg)
+        {
+        }
     };
+
+    template <class S1, class S2>
+    [[noreturn]] void throw_broadcast_error(const S1& lhs, const S2& rhs);
 
     /**********************************
      * broadcast_error implementation *
      **********************************/
 
+#ifdef NDEBUG
+    // Do not inline this function
     template <class S1, class S2>
-    inline broadcast_error::broadcast_error(const S1& lhs, const S2& rhs)
+    [[noreturn]] void throw_broadcast_error(const S1&, const S2&)
+    {
+        throw broadcast_error("Incompatible dimension of arrays, compile in DEBUG for more info");
+    }
+#else
+    template <class S1, class S2>
+    [[noreturn]] void throw_broadcast_error(const S1& lhs, const S2& rhs)
     {
         std::ostringstream buf("Incompatible dimension of arrays:", std::ios_base::ate);
 
@@ -55,42 +62,23 @@ namespace xt
         std::copy(rhs.cbegin(), rhs.cend(), iter2);
         buf << ")";
 
-        m_message = buf.str();
+        throw broadcast_error(buf.str().c_str());
     }
-
-    inline const char* broadcast_error::what() const noexcept
-    {
-        return m_message.c_str();
-    }
+#endif
 
     /*******************
      * transpose_error *
      *******************/
 
-    class transpose_error : public std::exception
+    class transpose_error : public std::runtime_error
     {
     public:
 
-        explicit transpose_error(const std::string& msg);
-
-        virtual const char* what() const noexcept;
-
-    private:
-
-        std::string m_message;
+        explicit transpose_error(const char* msg)
+            : std::runtime_error(msg)
+        {
+        }
     };
-
-    /**********************************
-     * transpose_error implementation *
-     **********************************/
-
-    inline transpose_error::transpose_error(const std::string& msg)
-        : m_message(msg) {}
-
-    inline const char* transpose_error::what() const noexcept
-    {
-        return m_message.c_str();
-    }
 
     /***************
      * check_index *
@@ -131,14 +119,15 @@ namespace xt
     template <class S, class... Args>
     inline void check_index(const S& shape, Args... args)
     {
-        detail::check_index_impl<S, 0>(shape, args...);
+        using value_type = typename S::value_type;
+        detail::check_index_impl<S, 0>(shape, static_cast<value_type>(args)...);
     }
 
     template <class S, class It>
     inline void check_element_index(const S& shape, It first, It last)
     {
         auto dst = static_cast<typename S::size_type>(last - first);
-        It efirst = last - std::min(shape.size(), dst);
+        It efirst = last - static_cast<std::ptrdiff_t>((std::min)(shape.size(), dst));
         std::size_t axis = 0;
         while (efirst != last)
         {
@@ -177,8 +166,8 @@ namespace xt
     }
 
 #ifdef XTENSOR_ENABLE_ASSERT
-#define XTENSOR_ASSERT(expr) XTENSOR_ASSERT_IMPL(expr, __FILE__, __LINE__)
-#define XTENSOR_ASSERT_IMPL(expr, file, line)                                                                                    \
+#define XTENSOR_TRY(expr) XTENSOR_TRY_IMPL(expr, __FILE__, __LINE__)
+#define XTENSOR_TRY_IMPL(expr, file, line)                                                                                       \
     try                                                                                                                          \
     {                                                                                                                            \
         expr;                                                                                                                    \
@@ -188,33 +177,42 @@ namespace xt
         throw std::runtime_error(std::string(file) + ':' + std::to_string(line) + ": check failed\n\t" + std::string(e.what())); \
     }
 #else
+#define XTENSOR_TRY(expr)
+#endif
+
+#ifdef XTENSOR_ENABLE_ASSERT
+#define XTENSOR_ASSERT(expr) XTENSOR_ASSERT_IMPL(expr, __FILE__, __LINE__)
+#define XTENSOR_ASSERT_IMPL(expr, file, line)                                                                                    \
+    if (!(expr))                                                                                                                 \
+    {                                                                                                                            \
+        throw std::runtime_error(std::string(file) + ':' + std::to_string(line) + ": assertion failed (" #expr ") \n\t");        \
+    }
+#else
 #define XTENSOR_ASSERT(expr)
 #endif
-}
 
 #ifdef XTENSOR_ENABLE_CHECK_DIMENSION
-#define XTENSOR_CHECK_DIMENSION(S, ARGS) XTENSOR_ASSERT(check_dimension(S, ARGS))
+#define XTENSOR_CHECK_DIMENSION(S, ARGS) XTENSOR_TRY(check_dimension(S, ARGS))
 #else
 #define XTENSOR_CHECK_DIMENSION(S, ARGS)
 #endif
 
 #ifdef XTENSOR_ENABLE_ASSERT
-#define XTENSOR_ASSERT_MSG(PREDICATE, MESSAGE)                                                \
-    if (!(PREDICATE))                                                                         \
+#define XTENSOR_ASSERT_MSG(expr, msg)                                                         \
+    if (!(expr))                                                                              \
     {                                                                                         \
-        throw std::runtime_error(std::string("Assertion error!\n") + MESSAGE +                \
+        throw std::runtime_error(std::string("Assertion error!\n") + msg +                    \
                                  "\n  " + __FILE__ + '(' + std::to_string(__LINE__) + ")\n"); \
     }
-
 #else
-#define XTENSOR_ASSERT_MSG(PREDICATE, MESSAGE)
+#define XTENSOR_ASSERT_MSG(expr, msg)
 #endif
 
-#define XTENSOR_PRECONDITION(PREDICATE, MESSAGE)                                              \
-    if (!(PREDICATE))                                                                         \
+#define XTENSOR_PRECONDITION(expr, msg)                                                       \
+    if (!(expr))                                                                              \
     {                                                                                         \
-        throw std::runtime_error(std::string("Precondition violation!\n") + MESSAGE +         \
+        throw std::runtime_error(std::string("Precondition violation!\n") + msg +             \
                                  "\n  " + __FILE__ + '(' + std::to_string(__LINE__) + ")\n"); \
     }
-
+}
 #endif  // XEXCEPTION_HPP

@@ -10,12 +10,15 @@
 #define XTENSOR_ASSIGN_HPP
 
 #include <algorithm>
+#include <type_traits>
+#include <utility>
 
-#include "xtl/xsequence.hpp"
+#include <xtl/xsequence.hpp>
 
 #include "xconcepts.hpp"
 #include "xexpression.hpp"
 #include "xiterator.hpp"
+#include "xstrides.hpp"
 #include "xtensor_forward.hpp"
 #include "xutils.hpp"
 
@@ -79,7 +82,7 @@ namespace xt
     private:
 
         template <class E1, class E2>
-        static bool reshape(xexpression<E1>& e1, const xexpression<E2>& e2);
+        static bool resize(xexpression<E1>& e1, const xexpression<E2>& e2);
     };
 
     /*****************
@@ -96,12 +99,14 @@ namespace xt
         using shape_type = typename E1::shape_type;
         using index_type = xindex_type_t<shape_type>;
         using size_type = typename lhs_iterator::size_type;
+        using difference_type = typename lhs_iterator::difference_type;
 
         data_assigner(E1& e1, const E2& e2);
 
         void run();
 
         void step(size_type i);
+        void step(size_type i, size_type n);
         void reset(size_type i);
 
         void to_end(layout_type);
@@ -112,7 +117,6 @@ namespace xt
 
         lhs_iterator m_lhs;
         rhs_iterator m_rhs;
-        rhs_iterator m_rhs_end;
 
         index_type m_index;
     };
@@ -139,11 +143,28 @@ namespace xt
         xexpression_assigner<tag>::assign_data(e1, e2, trivial);
     }
 
+    template <class E1, class E2, class = void>
+    struct has_assign_to : std::false_type
+    {
+    };
+
+    template <class E1, class E2>
+    struct has_assign_to<E1, E2, void_t<decltype(std::declval<const E2&>().assign_to(std::declval<E1&>()))>>
+        : std::true_type
+    {
+    };
+
     template <class E1, class E2>
     inline void assign_xexpression(xexpression<E1>& e1, const xexpression<E2>& e2)
     {
-        using tag = xexpression_tag_t<E1, E2>;
-        xexpression_assigner<tag>::assign_xexpression(e1, e2);
+        xtl::mpl::static_if<has_assign_to<E1, E2>::value>([&](auto self)
+        {
+            self(e2).derived_cast().assign_to(e1);
+        }, /*else*/ [&](auto /*self*/)
+        {
+            using tag = xexpression_tag_t<E1, E2>;
+            xexpression_assigner<tag>::assign_xexpression(e1, e2);
+        });
     }
 
     template <class E1, class E2>
@@ -176,7 +197,8 @@ namespace xt
         template <class E1, class E2>
         inline bool is_trivial_broadcast(const E1& e1, const E2& e2)
         {
-            return e2.is_trivial_broadcast(e1.strides());
+            return (E1::contiguous_layout && E2::contiguous_layout && (E1::static_layout == E2::static_layout))
+                    || e2.is_trivial_broadcast(e1.strides());
         }
 
         template <class D, class E2, class... SL>
@@ -191,13 +213,44 @@ namespace xt
             static constexpr bool value = true;
         };
 
+        // Double steps check for xfunction because the default
+        // parameter void_t of forbid_simd_assign prevents additional
+        // specializations.
+        template <class E>
+        struct xfunction_forbid_simd;
+
         template <class E>
         struct forbid_simd_assign<E,
             void_t<decltype(std::declval<E>().template load_simd<aligned_mode>(typename E::size_type(0)))>>
         {
+            static constexpr bool value = false || xfunction_forbid_simd<E>::value;
+        };
+
+        template <class E>
+        struct xfunction_forbid_simd
+        {
             static constexpr bool value = false;
         };
+
+        template <class F, class R, class... CT>
+        struct xfunction_forbid_simd<xfunction<F, R, CT...>>
+        {
+            static constexpr bool value = xtl::disjunction<
+                std::integral_constant<bool, forbid_simd_assign<typename std::decay<CT>::type>::value>...>::value;
+        };
     }
+
+    template <class E1, class E2>
+    struct xassign_traits
+    {
+        // constexpr methods instead of constexpr data members avoid the need of difinitions at namespace
+        // scope of these data members (since they are odr-used).
+        static constexpr bool contiguous_layout() { return E1::contiguous_layout && E2::contiguous_layout; }
+        static constexpr bool same_type() { return std::is_same<typename E1::value_type, typename E2::value_type>::value; }
+        static constexpr bool simd_size() { return xsimd::simd_traits<typename E1::value_type>::size > 1; }
+        static constexpr bool forbid_simd() { return detail::forbid_simd_assign<E2>::value; }
+        static constexpr bool simd_assign() { return contiguous_layout() && same_type() && simd_size() && !forbid_simd(); }
+    };
 
     template <class E1, class E2>
     inline void xexpression_assigner_base<xtensor_expression_tag>::assign_data(xexpression<E1>& e1, const xexpression<E2>& e2, bool trivial)
@@ -208,11 +261,7 @@ namespace xt
         bool trivial_broadcast = trivial && detail::is_trivial_broadcast(de1, de2);
         if (trivial_broadcast)
         {
-            constexpr bool contiguous_layout = E1::contiguous_layout && E2::contiguous_layout;
-            constexpr bool same_type = std::is_same<typename E1::value_type, typename E2::value_type>::value;
-            constexpr bool simd_size = xsimd::simd_traits<typename E1::value_type>::size > 1;
-            constexpr bool forbid_simd = detail::forbid_simd_assign<E2>::value;
-            constexpr bool simd_assign = contiguous_layout && same_type && simd_size && !forbid_simd;
+            constexpr bool simd_assign = xassign_traits<E1, E2>::simd_assign();
             trivial_assigner<simd_assign>::run(de1, de2);
         }
         else
@@ -226,7 +275,7 @@ namespace xt
     template <class E1, class E2>
     inline void xexpression_assigner<Tag>::assign_xexpression(xexpression<E1>& e1, const xexpression<E2>& e2)
     {
-        bool trivial_broadcast = reshape(e1, e2);
+        bool trivial_broadcast = resize(e1, e2);
         base_type::assign_data(e1, e2, trivial_broadcast);
     }
 
@@ -241,8 +290,8 @@ namespace xt
         const E2& de2 = e2.derived_cast();
 
         size_type dim = de2.dimension();
-        shape_type shape = xtl::make_sequence<shape_type>(dim, size_type(1));
-        bool trivial_broadcast = de2.broadcast_shape(shape);
+        shape_type shape = xtl::make_sequence<shape_type>(dim, size_type(0));
+        bool trivial_broadcast = de2.broadcast_shape(shape, true);
 
         if (dim > de1.dimension() || shape > de1.shape())
         {
@@ -269,30 +318,25 @@ namespace xt
     template <class E1, class E2>
     inline void xexpression_assigner<Tag>::assert_compatible_shape(const xexpression<E1>& e1, const xexpression<E2>& e2)
     {
-        using shape_type = typename E1::shape_type;
-        using size_type = typename E1::size_type;
         const E1& de1 = e1.derived_cast();
         const E2& de2 = e2.derived_cast();
-        size_type size = de2.dimension();
-        shape_type shape = xtl::make_sequence<shape_type>(size, size_type(1));
-        de2.broadcast_shape(shape);
-        if (shape.size() > de1.shape().size() || shape > de1.shape())
+        if (!broadcastable(de2.shape(), de1.shape()))
         {
-            throw broadcast_error(shape, de1.shape());
+            throw_broadcast_error(de2.shape(), de1.shape());
         }
     }
 
     template <class Tag>
     template <class E1, class E2>
-    inline bool xexpression_assigner<Tag>::reshape(xexpression<E1>& e1, const xexpression<E2>& e2)
+    inline bool xexpression_assigner<Tag>::resize(xexpression<E1>& e1, const xexpression<E2>& e2)
     {
         using shape_type = typename E1::shape_type;
         using size_type = typename E1::size_type;
         const E2& de2 = e2.derived_cast();
         size_type size = de2.dimension();
-        shape_type shape = xtl::make_sequence<shape_type>(size, size_type(1));
-        bool trivial_broadcast = de2.broadcast_shape(shape);
-        e1.derived_cast().reshape(std::move(shape));
+        shape_type shape = xtl::make_sequence<shape_type>(size, size_type(0));
+        bool trivial_broadcast = de2.broadcast_shape(shape, true);
+        e1.derived_cast().resize(std::move(shape));
         return trivial_broadcast;
     }
 
@@ -303,7 +347,7 @@ namespace xt
     template <class E1, class E2, layout_type L>
     inline data_assigner<E1, E2, L>::data_assigner(E1& e1, const E2& e2)
         : m_e1(e1), m_lhs(e1.stepper_begin(e1.shape())),
-          m_rhs(e2.stepper_begin(e1.shape())), m_rhs_end(e2.stepper_end(e1.shape(), L)),
+          m_rhs(e2.stepper_begin(e1.shape())),
           m_index(xtl::make_sequence<index_type>(e1.shape().size(), size_type(0)))
     {
     }
@@ -311,11 +355,13 @@ namespace xt
     template <class E1, class E2, layout_type L>
     inline void data_assigner<E1, E2, L>::run()
     {
+        using size_type = typename E1::size_type;
         using argument_type = std::decay_t<decltype(*m_rhs)>;
         using result_type = std::decay_t<decltype(*m_lhs)>;
         constexpr bool is_narrowing = is_narrowing_conversion<argument_type, result_type>::value;
 
-        while (m_rhs != m_rhs_end)
+        size_type s = m_e1.size();
+        for (size_type i = 0; i < s; ++i)
         {
             *m_lhs = conditional_cast<is_narrowing, result_type>(*m_rhs);
             stepper_tools<L>::increment_stepper(*this, m_index, m_e1.shape());
@@ -327,6 +373,13 @@ namespace xt
     {
         m_lhs.step(i);
         m_rhs.step(i);
+    }
+
+    template <class E1, class E2, layout_type L>
+    inline void data_assigner<E1, E2, L>::step(size_type i, size_type n)
+    {
+        m_lhs.step(i, n);
+        m_rhs.step(i, n);
     }
 
     template <class E1, class E2, layout_type L>
@@ -360,7 +413,7 @@ namespace xt
         size_type size = e1.size();
         size_type simd_size = simd_type::size;
 
-        size_type align_begin = is_aligned ? 0 : xsimd::get_alignment_offset(e1.raw_data(), size, simd_size);
+        size_type align_begin = is_aligned ? 0 : xsimd::get_alignment_offset(e1.data(), size, simd_size);
         size_type align_end = align_begin + ((size - align_begin) & ~(simd_size - 1));
 
         for (size_type i = 0; i < align_begin; ++i)
@@ -382,7 +435,7 @@ namespace xt
         template <class E1, class E2>
         inline void trivial_assigner_run_impl(E1& e1, const E2& e2, std::true_type)
         {
-            std::copy(e2.storage_cbegin(), e2.storage_cend(), e1.storage_begin());
+            std::transform(e2.storage_cbegin(), e2.storage_cend(), e1.storage_begin(), [](typename E2::value_type x) { return static_cast<typename E1::value_type>(x); });
         }
 
         template <class E1, class E2>

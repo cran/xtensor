@@ -15,7 +15,7 @@
 #include <type_traits>
 #include <utility>
 
-#include "xtl/xproxy_wrapper.hpp"
+#include <xtl/xproxy_wrapper.hpp>
 
 #include "xtensor/xexpression.hpp"
 #include "xtensor/xiterator.hpp"
@@ -73,7 +73,7 @@ namespace xt
         using temporary_type = typename xfunctor_view_temporary_type<F, xexpression_type>::type;
     };
 
-#define DL DEFAULT_LAYOUT
+#define DL XTENSOR_DEFAULT_LAYOUT
     /**
      * @class xfunctor_view
      * @brief View of an xexpression .
@@ -193,7 +193,7 @@ namespace xt
         const_reference element(IT first, IT last) const;
 
         template <class S>
-        bool broadcast_shape(S& shape) const;
+        bool broadcast_shape(S& shape, bool reuse_cache = false) const;
 
         template <class S>
         bool is_trivial_broadcast(const S& strides) const;
@@ -308,7 +308,11 @@ namespace xt
      *********************************/
 
     template <class F, class IT>
-    class xfunctor_iterator
+    class xfunctor_iterator : public xtl::xrandom_access_iterator_base<xfunctor_iterator<F, IT>,
+                                                                       typename F::value_type,
+                                                                       typename std::iterator_traits<IT>::difference_type,
+                                                                       typename xtl::xproxy_wrapper<decltype(std::declval<F>()(*(IT())))>::pointer,
+                                                                       xtl::xproxy_wrapper<decltype(std::declval<F>()(*(IT())))>>
     {
     public:
 
@@ -326,23 +330,23 @@ namespace xt
         xfunctor_iterator(const IT&, const functor_type*);
 
         self_type& operator++();
-        self_type operator++(int);
+        self_type& operator--();
+
+        self_type& operator+=(difference_type n);
+        self_type& operator-=(difference_type n);
+
+        difference_type operator-(xfunctor_iterator rhs) const;
 
         reference operator*() const;
         pointer operator->() const;
 
         bool equal(const xfunctor_iterator& rhs) const;
+        bool less_than(const xfunctor_iterator& rhs) const;
 
     private:
 
         IT m_it;
         const functor_type* p_functor;
-
-        template <class F_, class IT_>
-        friend xfunctor_iterator<F_, IT_> operator+(xfunctor_iterator<F_, IT_>, xfunctor_iterator<F_, IT_>);
-
-        template <class F_, class IT_>
-        friend typename xfunctor_iterator<F_, IT_>::difference_type operator-(xfunctor_iterator<F_, IT_>, xfunctor_iterator<F_, IT_>);
     };
 
     template <class F, class IT>
@@ -350,20 +354,8 @@ namespace xt
                     const xfunctor_iterator<F, IT>& rhs);
 
     template <class F, class IT>
-    bool operator!=(const xfunctor_iterator<F, IT>& lhs,
-                    const xfunctor_iterator<F, IT>& rhs);
-
-    template <class F, class IT>
-    xfunctor_iterator<F, IT> operator+(xfunctor_iterator<F, IT> it1, xfunctor_iterator<F, IT> it2)
-    {
-        return xfunctor_iterator<F, IT>(it1.m_it + it2.m_it);
-    }
-
-    template <class F, class IT>
-    typename xfunctor_iterator<F, IT>::difference_type operator-(xfunctor_iterator<F, IT> it1, xfunctor_iterator<F, IT> it2)
-    {
-        return it1.m_it - it2.m_it;
-    }
+    bool operator<(const xfunctor_iterator<F, IT>& lhs,
+                   const xfunctor_iterator<F, IT>& rhs);
 
     /********************************
      * xfunctor_stepper declaration *
@@ -387,29 +379,21 @@ namespace xt
 
         reference operator*() const;
 
-        void step(size_type dim, size_type n = 1);
-        void step_back(size_type dim, size_type n = 1);
+        void step(size_type dim);
+        void step_back(size_type dim);
+        void step(size_type dim, size_type n);
+        void step_back(size_type dim, size_type n);
         void reset(size_type dim);
         void reset_back(size_type dim);
 
         void to_begin();
         void to_end(layout_type);
 
-        bool equal(const xfunctor_stepper& rhs) const;
-
     private:
 
         ST m_stepper;
         const functor_type* p_functor;
     };
-
-    template <class F, class ST>
-    bool operator==(const xfunctor_stepper<F, ST>& lhs,
-                    const xfunctor_stepper<F, ST>& rhs);
-
-    template <class F, class ST>
-    bool operator!=(const xfunctor_stepper<F, ST>& lhs,
-                    const xfunctor_stepper<F, ST>& rhs);
 
     /********************************
      * xfunctor_view implementation *
@@ -536,6 +520,8 @@ namespace xt
     template <class... Args>
     inline auto xfunctor_view<F, CT>::operator()(Args... args) -> reference
     {
+        XTENSOR_TRY(check_index(shape(), args...));
+        XTENSOR_CHECK_DIMENSION(shape(), args...);
         return m_functor(m_e(args...));
     }
 
@@ -595,6 +581,7 @@ namespace xt
     template <class IT>
     inline auto xfunctor_view<F, CT>::element(IT first, IT last) -> reference
     {
+        XTENSOR_TRY(check_element_index(shape(), first, last));
         return m_functor(m_e.element(first, last));
     }
 
@@ -608,6 +595,8 @@ namespace xt
     template <class... Args>
     inline auto xfunctor_view<F, CT>::operator()(Args... args) const -> const_reference
     {
+        XTENSOR_TRY(check_index(shape(), args...));
+        XTENSOR_CHECK_DIMENSION(shape(), args...);
         return m_functor(m_e(args...));
     }
 
@@ -667,6 +656,7 @@ namespace xt
     template <class IT>
     inline auto xfunctor_view<F, CT>::element(IT first, IT last) const -> const_reference
     {
+        XTENSOR_TRY(check_element_index(shape(), first, last));
         return m_functor(m_e.element(first, last));
     }
     //@}
@@ -678,13 +668,14 @@ namespace xt
     /**
      * Broadcast the shape of the function to the specified parameter.
      * @param shape the result shape
+     * @param reuse_cache boolean for reusing a previously computed shape
      * @return a boolean indicating whether the broadcasting is trivial
      */
     template <class F, class CT>
     template <class S>
-    inline bool xfunctor_view<F, CT>::broadcast_shape(S& shape) const
+    inline bool xfunctor_view<F, CT>::broadcast_shape(S& shape, bool reuse_cache) const
     {
-        return m_e.broadcast_shape(shape);
+        return m_e.broadcast_shape(shape, reuse_cache);
     }
 
     /**
@@ -706,7 +697,7 @@ namespace xt
     //@{
     /**
      * Returns an iterator to the first element of the expression.
-     * @tparam L layout used for the traversal. Default value is \c DEFAULT_LAYOUT.
+     * @tparam L layout used for the traversal. Default value is \c XTENSOR_DEFAULT_LAYOUT.
      */
     template <class F, class CT>
     template <layout_type L>
@@ -719,7 +710,7 @@ namespace xt
     /**
      * Returns an iterator to the element following the last element
      * of the expression.
-     * @tparam L layout used for the traversal. Default value is \c DEFAULT_LAYOUT.
+     * @tparam L layout used for the traversal. Default value is \c XTENSOR_DEFAULT_LAYOUT.
      */
     template <class F, class CT>
     template <layout_type L>
@@ -731,30 +722,30 @@ namespace xt
 
     /**
      * Returns a constant iterator to the first element of the expression.
-     * @tparam L layout used for the traversal. Default value is \c DEFAULT_LAYOUT.
+     * @tparam L layout used for the traversal. Default value is \c XTENSOR_DEFAULT_LAYOUT.
      */
     template <class F, class CT>
     template <layout_type L>
     inline auto xfunctor_view<F, CT>::begin() const noexcept
     {
-        return cbegin<L>();
+        return this->template cbegin<L>();
     }
 
     /**
      * Returns a constant iterator to the element following the last element
      * of the expression.
-     * @tparam L layout used for the traversal. Default value is \c DEFAULT_LAYOUT.
+     * @tparam L layout used for the traversal. Default value is \c XTENSOR_DEFAULT_LAYOUT.
      */
     template <class F, class CT>
     template <layout_type L>
     inline auto xfunctor_view<F, CT>::end() const noexcept
     {
-        return cend<L>();
+        return this->template cend<L>();
     }
 
     /**
      * Returns a constant iterator to the first element of the expression.
-     * @tparam L layout used for the traversal. Default value is \c DEFAULT_LAYOUT.
+     * @tparam L layout used for the traversal. Default value is \c XTENSOR_DEFAULT_LAYOUT.
      */
     template <class F, class CT>
     template <layout_type L>
@@ -767,7 +758,7 @@ namespace xt
     /**
      * Returns a constant iterator to the element following the last element
      * of the expression.
-     * @tparam L layout used for the traversal. Default value is \c DEFAULT_LAYOUT.
+     * @tparam L layout used for the traversal. Default value is \c XTENSOR_DEFAULT_LAYOUT.
      */
     template <class F, class CT>
     template <layout_type L>
@@ -787,7 +778,7 @@ namespace xt
      * iteration is broadcasted to the specified shape.
      * @param shape the shape used for broadcasting
      * @tparam S type of the \c shape parameter.
-     * @tparam L layout used for the traversal. Default value is \c DEFAULT_LAYOUT.
+     * @tparam L layout used for the traversal. Default value is \c XTENSOR_DEFAULT_LAYOUT.
      */
     template <class F, class CT>
     template <class S, layout_type L>
@@ -801,7 +792,7 @@ namespace xt
      * expression. The iteration is broadcasted to the specified shape.
      * @param shape the shape used for broadcasting
      * @tparam S type of the \c shape parameter.
-     * @tparam L layout used for the traversal. Default value is \c DEFAULT_LAYOUT.
+     * @tparam L layout used for the traversal. Default value is \c XTENSOR_DEFAULT_LAYOUT.
      */
     template <class F, class CT>
     template <class S, layout_type L>
@@ -815,7 +806,7 @@ namespace xt
      * iteration is broadcasted to the specified shape.
      * @param shape the shape used for broadcasting
      * @tparam S type of the \c shape parameter.
-     * @tparam L layout used for the traversal. Default value is \c DEFAULT_LAYOUT.
+     * @tparam L layout used for the traversal. Default value is \c XTENSOR_DEFAULT_LAYOUT.
      */
     template <class F, class CT>
     template <class S, layout_type L>
@@ -829,7 +820,7 @@ namespace xt
      * expression. The iteration is broadcasted to the specified shape.
      * @param shape the shape used for broadcasting
      * @tparam S type of the \c shape parameter.
-     * @tparam L layout used for the traversal. Default value is \c DEFAULT_LAYOUT.
+     * @tparam L layout used for the traversal. Default value is \c XTENSOR_DEFAULT_LAYOUT.
      */
     template <class F, class CT>
     template <class S, layout_type L>
@@ -843,7 +834,7 @@ namespace xt
      * iteration is broadcasted to the specified shape.
      * @param shape the shape used for broadcasting
      * @tparam S type of the \c shape parameter.
-     * @tparam L layout used for the traversal. Default value is \c DEFAULT_LAYOUT.
+     * @tparam L layout used for the traversal. Default value is \c XTENSOR_DEFAULT_LAYOUT.
      */
     template <class F, class CT>
     template <class S, layout_type L>
@@ -857,7 +848,7 @@ namespace xt
      * expression. The iteration is broadcasted to the specified shape.
      * @param shape the shape used for broadcasting
      * @tparam S type of the \c shape parameter.
-     * @tparam L layout used for the traversal. Default value is \c DEFAULT_LAYOUT.
+     * @tparam L layout used for the traversal. Default value is \c XTENSOR_DEFAULT_LAYOUT.
      */
     template <class F, class CT>
     template <class S, layout_type L>
@@ -873,7 +864,7 @@ namespace xt
     //@{
     /**
      * Returns an iterator to the first element of the reversed expression.
-     * @tparam L layout used for the traversal. Default value is \c DEFAULT_LAYOUT.
+     * @tparam L layout used for the traversal. Default value is \c XTENSOR_DEFAULT_LAYOUT.
      */
     template <class F, class CT>
     template <layout_type L>
@@ -886,7 +877,7 @@ namespace xt
     /**
      * Returns an iterator to the element following the last element
      * of the reversed expression.
-     * @tparam L layout used for the traversal. Default value is \c DEFAULT_LAYOUT.
+     * @tparam L layout used for the traversal. Default value is \c XTENSOR_DEFAULT_LAYOUT.
      */
     template <class F, class CT>
     template <layout_type L>
@@ -898,30 +889,30 @@ namespace xt
 
     /**
      * Returns a constant iterator to the first element of the reversed expression.
-     * @tparam L layout used for the traversal. Default value is \c DEFAULT_LAYOUT.
+     * @tparam L layout used for the traversal. Default value is \c XTENSOR_DEFAULT_LAYOUT.
      */
     template <class F, class CT>
     template <layout_type L>
     inline auto xfunctor_view<F, CT>::rbegin() const noexcept
     {
-        return crbegin<L>();
+        return this->template crbegin<L>();
     }
 
     /**
      * Returns a constant iterator to the element following the last element
      * of the reversed expression.
-     * @tparam L layout used for the traversal. Default value is \c DEFAULT_LAYOUT.
+     * @tparam L layout used for the traversal. Default value is \c XTENSOR_DEFAULT_LAYOUT.
      */
     template <class F, class CT>
     template <layout_type L>
     inline auto xfunctor_view<F, CT>::rend() const noexcept
     {
-        return crend<L>();
+        return this->template crend<L>();
     }
 
     /**
      * Returns a constant iterator to the first element of the reversed expression.
-     * @tparam L layout used for the traversal. Default value is \c DEFAULT_LAYOUT.
+     * @tparam L layout used for the traversal. Default value is \c XTENSOR_DEFAULT_LAYOUT.
      */
     template <class F, class CT>
     template <layout_type L>
@@ -934,7 +925,7 @@ namespace xt
     /**
      * Returns a constant iterator to the element following the last element
      * of the reversed expression.
-     * @tparam L layout used for the traversal. Default value is \c DEFAULT_LAYOUT.
+     * @tparam L layout used for the traversal. Default value is \c XTENSOR_DEFAULT_LAYOUT.
      */
     template <class F, class CT>
     template <layout_type L>
@@ -953,7 +944,7 @@ namespace xt
      * iteration is broadcasted to the specified shape.
      * @param shape the shape used for broadcasting
      * @tparam S type of the \c shape parameter.
-     * @tparam L layout used for the traversal. Default value is \c DEFAULT_LAYOUT.
+     * @tparam L layout used for the traversal. Default value is \c XTENSOR_DEFAULT_LAYOUT.
      */
     template <class F, class CT>
     template <class S, layout_type L>
@@ -967,7 +958,7 @@ namespace xt
      * reversed expression. The iteration is broadcasted to the specified shape.
      * @param shape the shape used for broadcasting
      * @tparam S type of the \c shape parameter.
-     * @tparam L layout used for the traversal. Default value is \c DEFAULT_LAYOUT.
+     * @tparam L layout used for the traversal. Default value is \c XTENSOR_DEFAULT_LAYOUT.
      */
     template <class F, class CT>
     template <class S, layout_type L>
@@ -981,7 +972,7 @@ namespace xt
      * The iteration is broadcasted to the specified shape.
      * @param shape the shape used for broadcasting
      * @tparam S type of the \c shape parameter.
-     * @tparam L layout used for the traversal. Default value is \c DEFAULT_LAYOUT.
+     * @tparam L layout used for the traversal. Default value is \c XTENSOR_DEFAULT_LAYOUT.
      */
     template <class F, class CT>
     template <class S, layout_type L>
@@ -995,7 +986,7 @@ namespace xt
      * of the reversed expression.
      * @param shape the shape used for broadcasting
      * @tparam S type of the \c shape parameter.
-     * @tparam L layout used for the traversal. Default value is \c DEFAULT_LAYOUT.
+     * @tparam L layout used for the traversal. Default value is \c XTENSOR_DEFAULT_LAYOUT.
      */
     template <class F, class CT>
     template <class S, layout_type L>
@@ -1009,7 +1000,7 @@ namespace xt
      * The iteration is broadcasted to the specified shape.
      * @param shape the shape used for broadcasting
      * @tparam S type of the \c shape parameter.
-     * @tparam L layout used for the traversal. Default value is \c DEFAULT_LAYOUT.
+     * @tparam L layout used for the traversal. Default value is \c XTENSOR_DEFAULT_LAYOUT.
      */
     template <class F, class CT>
     template <class S, layout_type L>
@@ -1023,7 +1014,7 @@ namespace xt
      * of the reversed expression.
      * @param shape the shape used for broadcasting
      * @tparam S type of the \c shape parameter.
-     * @tparam L layout used for the traversal. Default value is \c DEFAULT_LAYOUT.
+     * @tparam L layout used for the traversal. Default value is \c XTENSOR_DEFAULT_LAYOUT.
      */
     template <class F, class CT>
     template <class S, layout_type L>
@@ -1162,18 +1153,37 @@ namespace xt
     }
 
     template <class F, class IT>
-    auto xfunctor_iterator<F, IT>::operator++() -> self_type&
+    inline auto xfunctor_iterator<F, IT>::operator++() -> self_type&
     {
         ++m_it;
         return *this;
     }
 
     template <class F, class IT>
-    auto xfunctor_iterator<F, IT>::operator++(int) -> self_type
+    inline auto xfunctor_iterator<F, IT>::operator--() -> self_type&
     {
-        self_type tmp(*this);
-        ++m_it;
-        return tmp;
+        --m_it;
+        return *this;
+    }
+
+    template <class F, class IT>
+    inline auto xfunctor_iterator<F, IT>::operator+=(difference_type n) -> self_type&
+    {
+        m_it += n;
+        return *this;
+    }
+
+    template <class F, class IT>
+    inline auto xfunctor_iterator<F, IT>::operator-=(difference_type n) -> self_type&
+    {
+        m_it -= n;
+        return *this;
+    }
+
+    template <class F, class IT>
+    inline auto xfunctor_iterator<F, IT>::operator-(xfunctor_iterator rhs) const -> difference_type
+    {
+        return m_it - rhs.m_it;
     }
 
     template <class F, class IT>
@@ -1195,6 +1205,12 @@ namespace xt
     }
 
     template <class F, class IT>
+    auto xfunctor_iterator<F, IT>::less_than(const xfunctor_iterator& rhs) const -> bool
+    {
+        return m_it < rhs.m_it;
+    }
+
+    template <class F, class IT>
     bool operator==(const xfunctor_iterator<F, IT>& lhs,
                     const xfunctor_iterator<F, IT>& rhs)
     {
@@ -1202,10 +1218,10 @@ namespace xt
     }
 
     template <class F, class IT>
-    bool operator!=(const xfunctor_iterator<F, IT>& lhs,
-                    const xfunctor_iterator<F, IT>& rhs)
+    bool operator<(const xfunctor_iterator<F, IT>& lhs,
+                   const xfunctor_iterator<F, IT>& rhs)
     {
-        return !lhs.equal(rhs);
+        return !lhs.less_than(rhs);
     }
 
     /***********************************
@@ -1222,6 +1238,18 @@ namespace xt
     auto xfunctor_stepper<F, ST>::operator*() const -> reference
     {
         return (*p_functor)(*m_stepper);
+    }
+
+    template <class F, class ST>
+    void xfunctor_stepper<F, ST>::step(size_type dim)
+    {
+        m_stepper.step(dim);
+    }
+
+    template <class F, class ST>
+    void xfunctor_stepper<F, ST>::step_back(size_type dim)
+    {
+        m_stepper.step_back(dim);
     }
 
     template <class F, class ST>
@@ -1258,26 +1286,6 @@ namespace xt
     void xfunctor_stepper<F, ST>::to_end(layout_type l)
     {
         m_stepper.to_end(l);
-    }
-
-    template <class F, class ST>
-    auto xfunctor_stepper<F, ST>::equal(const xfunctor_stepper& rhs) const -> bool
-    {
-        return m_stepper == rhs.m_stepper;
-    }
-
-    template <class F, class ST>
-    bool operator==(const xfunctor_stepper<F, ST>& lhs,
-                    const xfunctor_stepper<F, ST>& rhs)
-    {
-        return lhs.equal(rhs);
-    }
-
-    template <class F, class ST>
-    bool operator!=(const xfunctor_stepper<F, ST>& lhs,
-                    const xfunctor_stepper<F, ST>& rhs)
-    {
-        return !lhs.equal(rhs);
     }
 }
 #endif

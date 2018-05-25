@@ -1,9 +1,19 @@
+/***************************************************************************
+* Copyright (c) 2016, Sylvain Corlay and Johan Mabille                     *
+*                                                                          *
+* Distributed under the terms of the BSD 3-Clause License.                 *
+*                                                                          *
+* The full license is in the file LICENSE, distributed with this software. *
+****************************************************************************/
+
 #ifndef XTL_ANY_HPP
 #define XTL_ANY_HPP
 
 #include <stdexcept>
 #include <type_traits>
 #include <typeinfo>
+
+#include "xtl/xmeta_utils.hpp"
 
 namespace xtl
 {
@@ -254,7 +264,10 @@ namespace xtl
 
             static void swap(storage_union& lhs, storage_union& rhs) noexcept
             {
-                std::swap(reinterpret_cast<T&>(lhs.stack), reinterpret_cast<T&>(rhs.stack));
+                storage_union tmp_storage;
+                move(rhs, tmp_storage);
+                move(lhs, rhs);
+                move(tmp_storage, lhs);
             }
         };
 
@@ -334,10 +347,13 @@ namespace xtl
 
             this->vtable = vtable_for_type<T>();
 
-            if (requires_allocation<T>::value)
-                storage.dynamic = new T(std::forward<ValueType>(value));
-            else
-                new (&storage.stack) T(std::forward<ValueType>(value));
+            return xtl::mpl::static_if<requires_allocation<T>::value>([&](auto self)
+            {
+                self(*this).storage.dynamic = new T(std::forward<ValueType>(value));
+            }, /*else*/ [&](auto self)
+            {
+                new (&self(*this).storage.stack) T(std::forward<ValueType>(value));
+            });
         }
     };
 

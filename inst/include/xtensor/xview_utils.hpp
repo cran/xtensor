@@ -36,7 +36,7 @@ namespace xt
     template <class... S>
     constexpr std::size_t newaxis_count();
 
-    // number of newaxis types in the specified sequence of types before specified index
+// number of newaxis types in the specified sequence of types before specified index
     template <class... S>
     constexpr std::size_t newaxis_count_before(std::size_t i);
 
@@ -79,7 +79,7 @@ namespace xt
     template <class E, class... SL>
     struct view_temporary_type
     {
-        using type = typename detail::view_temporary_type_impl<typename E::value_type,
+        using type = typename detail::view_temporary_type_impl<std::decay_t<typename E::value_type>,
                                                                typename E::shape_type,
                                                                E::static_layout,
                                                                SL...>::type;

@@ -39,7 +39,7 @@ endmacro()
 
 ####################################################################################
 
-set(PN xtensor)
-set_and_check(${PN}_INCLUDE_DIRS "${PACKAGE_PREFIX_DIR}/include")
-set(${PN}_LIBRARY "")
-check_required_components(${PN})
+if(NOT TARGET xtensor)
+  include("${CMAKE_CURRENT_LIST_DIR}/xtensorTargets.cmake")
+  get_target_property(xtensor_INCLUDE_DIRS xtensor INTERFACE_INCLUDE_DIRECTORIES)
+endif()

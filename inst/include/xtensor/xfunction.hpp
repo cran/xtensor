@@ -17,8 +17,8 @@
 #include <type_traits>
 #include <utility>
 
-#include "xtl/xsequence.hpp"
-#include "xtl/xtype_traits.hpp"
+#include <xtl/xsequence.hpp>
+#include <xtl/xtype_traits.hpp>
 
 #include "xexpression.hpp"
 #include "xiterable.hpp"
@@ -88,19 +88,47 @@ namespace xt
         template <class... Args>
         using common_value_type_t = typename common_value_type<Args...>::type;
 
-        template <class F, class R, class = void_t<>>
+        template <class F, class CST, class R, class = void_t<>>
         struct simd_return_type
         {
         };
 
-        template <class F, class R>
-        struct simd_return_type<F, R, void_t<decltype(&F::simd_apply)>>
+        template <class F, class CST, class R>
+        struct simd_return_type<F, CST, R, void_t<decltype(&F::template simd_apply<CST>)>>
         {
-            using type = R;
+            using type = xsimd::simd_type<xsimd::simd_return_type<CST, R>>;
         };
 
-        template <class F, class R>
-        using simd_return_type_t = typename simd_return_type<F, R>::type;
+        template <class F, class CST, class R>
+        using simd_return_type_t = typename simd_return_type<F, CST, R>::type;
+
+        template <class T, class R>
+        struct functor_return_type
+        {
+            using type = R;
+            using simd_type = xsimd::simd_type<T>;
+        };
+
+        template <class T>
+        struct functor_return_type<T, std::complex<T>>
+        {
+            using type = std::complex<T>;
+            using simd_type = xsimd::simd_type<std::complex<T>>;
+        };
+
+        template <class T>
+        struct functor_return_type<T, bool>
+        {
+            using type = bool;
+            using simd_type = xsimd::simd_bool_type<T>;
+        };
+
+        template <>
+        struct functor_return_type<void, bool>
+        {
+            using type = bool;
+            using simd_type = bool;
+        };
     }
 
     template <class F, class R, class... CT>
@@ -124,7 +152,7 @@ namespace xt
      * xfunction_base *
      ******************/
 
-#define DL DEFAULT_LAYOUT
+#define DL XTENSOR_DEFAULT_LAYOUT
 
     /**
      * @class xfunction_base
@@ -147,6 +175,7 @@ namespace xt
         using self_type = xfunction_base<F, R, CT...>;
         using only_scalar = all_xscalar<CT...>;
         using functor_type = typename std::remove_reference<F>::type;
+        using tuple_type = std::tuple<CT...>;
 
         using value_type = R;
         using reference = value_type;
@@ -155,7 +184,8 @@ namespace xt
         using const_pointer = const value_type*;
         using size_type = detail::common_size_type_t<std::decay_t<CT>...>;
         using difference_type = detail::common_difference_type_t<std::decay_t<CT>...>;
-        using simd_value_type = xsimd::simd_type<value_type>;
+        using simd_value_type = typename detail::functor_return_type<detail::common_value_type_t<std::decay_t<CT>...>, R>::simd_type;
+        using simd_argument_type = xsimd::simd_type<detail::common_value_type_t<std::decay_t<CT>...>>;
         using iterable_base = xconst_iterable<xfunction_base<F, R, CT...>>;
         using inner_shape_type = typename iterable_base::inner_shape_type;
         using shape_type = inner_shape_type;
@@ -215,7 +245,7 @@ namespace xt
         const_reference element(It first, It last) const;
 
         template <class S>
-        bool broadcast_shape(S& shape) const;
+        bool broadcast_shape(S& shape, bool reuse_cache = false) const;
 
         template <class S>
         bool is_trivial_broadcast(const S& strides) const noexcept;
@@ -258,14 +288,14 @@ namespace xt
         operator value_type() const;
 
         template <class align, class simd = simd_value_type>
-        detail::simd_return_type_t<functor_type, simd> load_simd(size_type i) const;
+        detail::simd_return_type_t<functor_type, simd_argument_type, simd> load_simd(size_type i) const;
 
-        const std::tuple<CT...>& arguments() const noexcept;
+        const tuple_type& arguments() const noexcept;
 
     protected:
 
-        template <class Func, class U = std::enable_if<!std::is_base_of<Func, self_type>::value>>
-        xfunction_base(Func&& f, CT... e) noexcept;
+        template <class Func, class... CTA, class U = std::enable_if_t<!std::is_base_of<std::decay_t<Func>, self_type>::value>>
+        xfunction_base(Func&& f, CTA&&... e) noexcept;
 
         ~xfunction_base() = default;
 
@@ -290,7 +320,7 @@ namespace xt
         const_reference data_element_impl(std::index_sequence<I...>, size_type i) const;
 
         template <class align, class simd, std::size_t... I>
-        simd load_simd_impl(std::index_sequence<I...>, size_type i) const;
+        auto load_simd_impl(std::index_sequence<I...>, size_type i) const;
 
         template <class Func, std::size_t... I>
         const_stepper build_stepper(Func&& f, std::index_sequence<I...>) const noexcept;
@@ -300,9 +330,10 @@ namespace xt
 
         size_type compute_dimension() const noexcept;
 
-        std::tuple<CT...> m_e;
+        tuple_type m_e;
         functor_type m_f;
         mutable shape_type m_shape;
+        mutable bool m_shape_trivial;
         mutable bool m_shape_computed;
 
         friend class xfunction_iterator<F, R, CT...>;
@@ -350,7 +381,11 @@ namespace xt
     using get_iterator = typename detail::get_iterator_impl<C>::type;
 
     template <class F, class R, class... CT>
-    class xfunction_iterator
+    class xfunction_iterator : public xtl::xrandom_access_iterator_base<xfunction_iterator<F, R, CT...>,
+                                                                        typename xfunction_base<F, R, CT...>::value_type,
+                                                                        typename xfunction_base<F, R, CT...>::difference_type,
+                                                                        typename xfunction_base<F, R, CT...>::pointer,
+                                                                        typename xfunction_base<F, R, CT...>::reference>
     {
     public:
 
@@ -362,28 +397,38 @@ namespace xt
         using reference = typename xfunction_type::value_type;
         using pointer = typename xfunction_type::const_pointer;
         using difference_type = typename xfunction_type::difference_type;
-        using iterator_category = std::bidirectional_iterator_tag;
+        using iterator_category = std::random_access_iterator_tag;
 
         template <class... It>
         xfunction_iterator(const xfunction_type* func, It&&... it) noexcept;
 
         self_type& operator++();
-        self_type operator++(int);
-
         self_type& operator--();
-        self_type operator--(int);
+
+        self_type& operator+=(difference_type n);
+        self_type& operator-=(difference_type n);
+
+        difference_type operator-(const self_type& rhs) const;
 
         reference operator*() const;
 
         bool equal(const self_type& rhs) const;
+        bool less_than(const self_type& rhs) const;
 
     private:
+
+        using data_type = std::tuple<get_iterator<const std::decay_t<CT>>...>;
 
         template <std::size_t... I>
         reference deref_impl(std::index_sequence<I...>) const;
 
+        template <std::size_t... I>
+        difference_type tuple_max_diff(std::index_sequence<I...>,
+                                       const data_type& lhs,
+                                       const data_type& rhs) const;
+
         const xfunction_type* p_f;
-        std::tuple<get_iterator<const std::decay_t<CT>>...> m_it;
+        data_type m_it;
     };
 
     template <class F, class R, class... CT>
@@ -391,8 +436,8 @@ namespace xt
                     const xfunction_iterator<F, R, CT...>& it2);
 
     template <class F, class R, class... CT>
-    bool operator!=(const xfunction_iterator<F, R, CT...>& it1,
-                    const xfunction_iterator<F, R, CT...>& it2);
+    bool operator<(const xfunction_iterator<F, R, CT...>& it1,
+                   const xfunction_iterator<F, R, CT...>& it2);
 
     /*********************
      * xfunction_stepper *
@@ -418,8 +463,10 @@ namespace xt
         template <class... It>
         xfunction_stepper(const xfunction_type* func, It&&... it) noexcept;
 
-        void step(size_type dim, size_type n = 1);
-        void step_back(size_type dim, size_type n = 1);
+        void step(size_type dim);
+        void step_back(size_type dim);
+        void step(size_type dim, size_type n);
+        void step_back(size_type dim, size_type n);
         void reset(size_type dim);
         void reset_back(size_type dim);
 
@@ -427,8 +474,6 @@ namespace xt
         void to_end(layout_type l);
 
         reference operator*() const;
-
-        bool equal(const self_type& rhs) const;
 
     private:
 
@@ -438,14 +483,6 @@ namespace xt
         const xfunction_type* p_f;
         std::tuple<typename std::decay_t<CT>::const_stepper...> m_it;
     };
-
-    template <class F, class R, class... CT>
-    bool operator==(const xfunction_stepper<F, R, CT...>& it1,
-                    const xfunction_stepper<F, R, CT...>& it2);
-
-    template <class F, class R, class... CT>
-    bool operator!=(const xfunction_stepper<F, R, CT...>& it1,
-                    const xfunction_stepper<F, R, CT...>& it2);
 
     /*************
      * xfunction *
@@ -472,8 +509,8 @@ namespace xt
         using self_type = xfunction<F, R, CT...>;
         using base_type = xfunction_base<F, R, CT...>;
 
-        template <class Func, class U = std::enable_if<!std::is_base_of<Func, self_type>::value>>
-        xfunction(Func&& f, CT... e) noexcept;
+        template <class Func, class... CTA, class U = std::enable_if_t<!std::is_base_of<std::decay_t<Func>, self_type>::value>>
+        xfunction(Func&& f, CTA&&... e) noexcept;
 
         ~xfunction() = default;
 
@@ -499,9 +536,9 @@ namespace xt
      * @param e the \ref xexpression arguments
      */
     template <class F, class R, class... CT>
-    template <class Func, class U>
-    inline xfunction_base<F, R, CT...>::xfunction_base(Func&& f, CT... e) noexcept
-        : m_e(e...), m_f(std::forward<Func>(f)), m_shape(xtl::make_sequence<shape_type>(0, size_type(1))),
+    template <class Func, class... CTA, class U>
+    inline xfunction_base<F, R, CT...>::xfunction_base(Func&& f, CTA&&... e) noexcept
+        : m_e(std::forward<CTA>(e)...), m_f(std::forward<Func>(f)), m_shape(xtl::make_sequence<shape_type>(0, size_type(0))),
           m_shape_computed(false)
     {
     }
@@ -538,8 +575,8 @@ namespace xt
     {
         if (!m_shape_computed)
         {
-            m_shape = xtl::make_sequence<shape_type>(compute_dimension(), size_type(1));
-            broadcast_shape(m_shape);
+            m_shape = xtl::make_sequence<shape_type>(compute_dimension(), size_type(0));
+            m_shape_trivial = broadcast_shape(m_shape, false);
             m_shape_computed = true;
         }
         return m_shape;
@@ -633,15 +670,24 @@ namespace xt
     /**
      * Broadcast the shape of the function to the specified parameter.
      * @param shape the result shape
+     * @param reuse_cache boolean for reusing a previously computed shape
      * @return a boolean indicating whether the broadcasting is trivial
      */
     template <class F, class R, class... CT>
     template <class S>
-    inline bool xfunction_base<F, R, CT...>::broadcast_shape(S& shape) const
+    inline bool xfunction_base<F, R, CT...>::broadcast_shape(S& shape, bool reuse_cache) const
     {
-        // e.broadcast_shape must be evaluated even if b is false
-        auto func = [&shape](bool b, auto&& e) { return e.broadcast_shape(shape) && b; };
-        return accumulate(func, true, m_e);
+        if (reuse_cache && m_shape_computed)
+        {
+            std::copy(m_shape.cbegin(), m_shape.cend(), shape.begin());
+            return m_shape_trivial;
+        }
+        else
+        {
+            // e.broadcast_shape must be evaluated even if b is false
+            auto func = [&shape](bool b, auto&& e) { return e.broadcast_shape(shape) && b; };
+            return accumulate(func, true, m_e);
+        }
     }
 
     /**
@@ -747,13 +793,13 @@ namespace xt
 
     template <class F, class R, class... CT>
     template <class align, class simd>
-    inline auto xfunction_base<F, R, CT...>::load_simd(size_type i) const -> detail::simd_return_type_t<functor_type, simd>
+    inline auto xfunction_base<F, R, CT...>::load_simd(size_type i) const -> detail::simd_return_type_t<functor_type, simd_argument_type, simd>
     {
         return load_simd_impl<align, simd>(std::make_index_sequence<sizeof...(CT)>(), i);
     }
 
     template <class F, class R, class... CT>
-    inline auto xfunction_base<F, R, CT...>::arguments() const noexcept -> const std::tuple<CT...>&
+    inline auto xfunction_base<F, R, CT...>::arguments() const noexcept -> const tuple_type&
     {
         return m_e;
     }
@@ -769,6 +815,8 @@ namespace xt
     template <std::size_t... I, class... Args>
     inline auto xfunction_base<F, R, CT...>::access_impl(std::index_sequence<I...>, Args... args) const -> const_reference
     {
+        XTENSOR_TRY(check_index(shape(), args...));
+        XTENSOR_CHECK_DIMENSION(shape(), args...);
         return m_f(detail::get_element(std::get<I>(m_e), args...)...);
     }
 
@@ -776,6 +824,7 @@ namespace xt
     template <std::size_t... I, class It>
     inline auto xfunction_base<F, R, CT...>::element_access_impl(std::index_sequence<I...>, It first, It last) const -> const_reference
     {
+        XTENSOR_TRY(check_element_index(shape(), first, last));
         return m_f((std::get<I>(m_e).element(first, last))...);
     }
 
@@ -786,11 +835,50 @@ namespace xt
         return m_f((std::get<I>(m_e).data_element(i))...);
     }
 
+    namespace detail
+    {
+// TODO: add traits for batch_bool in xsimd and remove this ugly hack
+
+        template <class V>
+        struct is_batch_bool
+        {
+            static constexpr bool value = false;
+        };
+
+#ifdef XTENSOR_USE_XSIMD
+        template <class T, std::size_t N>
+        struct is_batch_bool<xsimd::batch_bool<T, N>>
+        {
+            static constexpr bool value = true;
+        };
+#endif
+
+        // This metafunction avoids loading boolean values as batches of floating points and
+        // reciprocally. However, we cannot always load data as batches of their scalar type
+        // since this prevents mixed arithmetic.
+        template <class T, class simd, class common_simd>
+        struct get_simd_type
+        {
+            using simd_value_type = typename std::decay_t<T>::simd_value_type;
+            static constexpr bool is_arg_bool = is_batch_bool<simd_value_type>::value;
+            static constexpr bool is_res_bool = is_batch_bool<simd>::value;
+            using type = std::conditional_t<is_res_bool,
+                                            common_simd,
+                                            std::conditional_t<is_arg_bool,
+                                                               simd_value_type,
+                                                               simd>>;
+        };
+
+        template <class T, class simd, class common_simd>
+        using get_simd_type_t = typename get_simd_type<T, simd, common_simd>::type;
+    }
+
     template <class F, class R, class... CT>
     template <class align, class simd, std::size_t... I>
-    inline auto xfunction_base<F, R, CT...>::load_simd_impl(std::index_sequence<I...>, size_type i) const -> simd
+    inline auto xfunction_base<F, R, CT...>::load_simd_impl(std::index_sequence<I...>, size_type i) const
     {
-        return m_f.simd_apply((std::get<I>(m_e).template load_simd<align, simd>(i))...);
+        return m_f.simd_apply((std::get<I>(m_e)
+            .template load_simd<align, detail::get_simd_type_t<std::tuple_element_t<I, tuple_type>, simd, simd_argument_type>>(i))...);
     }
 
     template <class F, class R, class... CT>
@@ -810,7 +898,7 @@ namespace xt
     template <class F, class R, class... CT>
     inline auto xfunction_base<F, R, CT...>::compute_dimension() const noexcept -> size_type
     {
-        auto func = [](size_type d, auto&& e) noexcept { return std::max(d, e.dimension()); };
+        auto func = [](size_type d, auto&& e) noexcept { return (std::max)(d, e.dimension()); };
         return accumulate(func, size_type(0), m_e);
     }
 
@@ -834,14 +922,6 @@ namespace xt
     }
 
     template <class F, class R, class... CT>
-    inline auto xfunction_iterator<F, R, CT...>::operator++(int) -> self_type
-    {
-        self_type tmp(*this);
-        ++(*this);
-        return tmp;
-    }
-
-    template <class F, class R, class... CT>
     inline auto xfunction_iterator<F, R, CT...>::operator--() -> self_type&
     {
         auto f = [](auto& it) { return --it; };
@@ -850,11 +930,25 @@ namespace xt
     }
 
     template <class F, class R, class... CT>
-    inline auto xfunction_iterator<F, R, CT...>::operator--(int) -> self_type
+    inline auto xfunction_iterator<F, R, CT...>::operator+=(difference_type n) -> self_type&
     {
-        self_type tmp(*this);
-        --(*this);
-        return tmp;
+        auto f = [n](auto& it) { it += n; };
+        for_each(f, m_it);
+        return *this;
+    }
+
+    template <class F, class R, class... CT>
+    inline auto xfunction_iterator<F, R, CT...>::operator-=(difference_type n) -> self_type&
+    {
+        auto f = [n](auto& it) { it -= n; };
+        for_each(f, m_it);
+        return *this;
+    }
+
+    template <class F, class R, class... CT>
+    inline auto xfunction_iterator<F, R, CT...>::operator-(const self_type& rhs) const -> difference_type
+    {
+        return tuple_max_diff(std::make_index_sequence<sizeof...(CT)>(), m_it, rhs.m_it);
     }
 
     template <class F, class R, class... CT>
@@ -870,10 +964,27 @@ namespace xt
     }
 
     template <class F, class R, class... CT>
+    inline bool xfunction_iterator<F, R, CT...>::less_than(const self_type& rhs) const
+    {
+        return p_f == rhs.p_f && m_it < rhs.m_it;
+    }
+
+    template <class F, class R, class... CT>
     template <std::size_t... I>
     inline auto xfunction_iterator<F, R, CT...>::deref_impl(std::index_sequence<I...>) const -> reference
     {
         return (p_f->m_f)(*std::get<I>(m_it)...);
+    }
+
+    template <class F, class R, class... CT>
+    template <std::size_t... I>
+    inline auto xfunction_iterator<F, R, CT...>::tuple_max_diff(std::index_sequence<I...>,
+                                                                const data_type& lhs,
+                                                                const data_type& rhs) const -> difference_type
+    {
+        auto diff = std::make_tuple((std::get<I>(lhs) - std::get<I>(rhs))...);
+        auto func = [](difference_type n, auto&& v) { return (std::max)(n, v); };
+        return accumulate(func, difference_type(0), diff);
     }
 
     template <class F, class R, class... CT>
@@ -884,10 +995,10 @@ namespace xt
     }
 
     template <class F, class R, class... CT>
-    inline bool operator!=(const xfunction_iterator<F, R, CT...>& it1,
-                           const xfunction_iterator<F, R, CT...>& it2)
+    inline bool operator<(const xfunction_iterator<F, R, CT...>& it1,
+                          const xfunction_iterator<F, R, CT...>& it2)
     {
-        return !(it1.equal(it2));
+        return it1.less_than(it2);
     }
 
     /************************************
@@ -899,6 +1010,20 @@ namespace xt
     inline xfunction_stepper<F, R, CT...>::xfunction_stepper(const xfunction_type* func, It&&... it) noexcept
         : p_f(func), m_it(std::forward<It>(it)...)
     {
+    }
+
+    template <class F, class R, class... CT>
+    inline void xfunction_stepper<F, R, CT...>::step(size_type dim)
+    {
+        auto f = [dim](auto& it) { it.step(dim); };
+        for_each(f, m_it);
+    }
+
+    template <class F, class R, class... CT>
+    inline void xfunction_stepper<F, R, CT...>::step_back(size_type dim)
+    {
+        auto f = [dim](auto& it) { it.step_back(dim); };
+        for_each(f, m_it);
     }
 
     template <class F, class R, class... CT>
@@ -950,46 +1075,26 @@ namespace xt
     }
 
     template <class F, class R, class... CT>
-    inline bool xfunction_stepper<F, R, CT...>::equal(const self_type& rhs) const
-    {
-        return p_f == rhs.p_f && m_it == rhs.m_it;
-    }
-
-    template <class F, class R, class... CT>
     template <std::size_t... I>
     inline auto xfunction_stepper<F, R, CT...>::deref_impl(std::index_sequence<I...>) const -> reference
     {
         return (p_f->m_f)(*std::get<I>(m_it)...);
     }
 
-    template <class F, class R, class... CT>
-    inline bool operator==(const xfunction_stepper<F, R, CT...>& it1,
-                           const xfunction_stepper<F, R, CT...>& it2)
-    {
-        return it1.equal(it2);
-    }
-
-    template <class F, class R, class... CT>
-    inline bool operator!=(const xfunction_stepper<F, R, CT...>& it1,
-                           const xfunction_stepper<F, R, CT...>& it2)
-    {
-        return !(it1.equal(it2));
-    }
-
     /****************************
      * xfunction implementation *
      ****************************/
 
-     /**
-      * Constructs an xfunction applying the specified function to the given
-      * arguments.
-      * @param f the function to apply
-      * @param e the \ref xexpression arguments
-      */
+    /**
+     * Constructs an xfunction applying the specified function to the given
+     * arguments.
+     * @param f the function to apply
+     * @param e the \ref xexpression arguments
+     */
     template <class F, class R, class... CT>
-    template <class Func, class U>
-    xfunction<F, R, CT...>::xfunction(Func&& f, CT... e) noexcept
-        : base_type(std::forward<Func>(f), e...)
+    template <class Func, class... CTA, class U>
+    xfunction<F, R, CT...>::xfunction(Func&& f, CTA&&... e) noexcept
+        : base_type(std::forward<Func>(f), std::forward<CTA>(e)...)
     {
     }
 }

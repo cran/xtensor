@@ -13,8 +13,8 @@
 
 #include "xarray.hpp"
 #include "xeval.hpp"
-#include "xstrided_view.hpp"
 #include "xslice.hpp"  // for xnone
+#include "xstrided_view.hpp"
 #include "xtensor.hpp"
 
 namespace xt
@@ -25,9 +25,9 @@ namespace xt
         using value_type = typename E::value_type;
         const auto de = e.derived_cast();
         E ev;
-        ev.reshape({ de.size() });
+        ev.resize({de.size()});
 
-        std::copy(de.begin(), de.end(), ev.begin());
+        std::copy(de.cbegin(), de.cend(), ev.begin());
         std::sort(ev.begin(), ev.end());
 
         return ev;
@@ -40,25 +40,25 @@ namespace xt
         {
             using value_type = typename E::value_type;
             std::size_t n_iters = 1;
-            ptrdiff_t secondary_stride;
+            std::ptrdiff_t secondary_stride;
             if (ev.layout() == layout_type::row_major)
             {
                 n_iters = std::accumulate(ev.shape().begin(), ev.shape().end() - 1,
                                           std::size_t(1), std::multiplies<>());
-                secondary_stride = static_cast<ptrdiff_t>(ev.strides()[ev.dimension() - 2]);
+                secondary_stride = static_cast<std::ptrdiff_t>(ev.strides()[ev.dimension() - 2]);
             }
             else
             {
                 n_iters = std::accumulate(ev.shape().begin() + 1, ev.shape().end(),
-                                          (std::size_t) 1, std::multiplies<>());
-                secondary_stride = static_cast<ptrdiff_t>(ev.strides()[1]);
+                                          std::size_t(1), std::multiplies<>());
+                secondary_stride = static_cast<std::ptrdiff_t>(ev.strides()[1]);
             }
 
-            ptrdiff_t offset = 0;
+            std::ptrdiff_t offset = 0;
 
             for (std::size_t i = 0; i < n_iters; ++i, offset += secondary_stride)
             {
-                fct(ev.raw_data() + offset, ev.raw_data() + offset + secondary_stride);
+                fct(ev.data() + offset, ev.data() + offset + secondary_stride);
             }
         }
 
@@ -106,7 +106,7 @@ namespace xt
         {
             auto axis_numbers = arange<std::size_t>(de.shape().size());
             std::vector<std::size_t> permutation(axis_numbers.begin(), axis_numbers.end());
-            permutation.erase(permutation.begin() + (ptrdiff_t) axis);
+            permutation.erase(permutation.begin() + std::ptrdiff_t(axis));
             if (de.layout() == layout_type::row_major)
             {
                 permutation.push_back(axis);
@@ -121,7 +121,7 @@ namespace xt
             for (auto el : axis_numbers)
             {
                 auto it = std::find(permutation.begin(), permutation.end(), el);
-                reverse_permutation.push_back((std::size_t) std::distance(permutation.begin(), it));
+                reverse_permutation.push_back(std::size_t(std::distance(permutation.begin(), it)));
             }
 
             ev = transpose(de, permutation);
@@ -159,7 +159,7 @@ namespace xt
         };
 
         template <class IT, class F>
-        inline std::size_t cmp_idx(IT iter, IT end, ptrdiff_t inc, F&& cmp)
+        inline std::size_t cmp_idx(IT iter, IT end, std::ptrdiff_t inc, F&& cmp)
         {
             std::size_t idx = 0;
             double min = *iter;
@@ -178,8 +178,8 @@ namespace xt
         template <class E, class F>
         xtensor<std::size_t, 0> arg_func_impl(const E& e, F&& f)
         {
-            return cmp_idx(e.template begin<DEFAULT_LAYOUT>(),
-                           e.template end<DEFAULT_LAYOUT>(), 1,
+            return cmp_idx(e.template begin<XTENSOR_DEFAULT_LAYOUT>(),
+                           e.template end<XTENSOR_DEFAULT_LAYOUT>(), 1,
                            std::forward<F>(f));
         }
 
@@ -195,8 +195,8 @@ namespace xt
                 return arg_func_impl(e, std::forward<F>(cmp));
             }
 
-            std::vector<std::size_t> new_shape = e.shape();
-            new_shape.erase(new_shape.begin() + (ptrdiff_t) axis);
+            xt::dynamic_shape<std::size_t> new_shape = e.shape();
+            new_shape.erase(new_shape.begin() + std::ptrdiff_t(axis));
 
             result_type result(new_shape);
             auto result_iter = result.begin();
@@ -221,8 +221,8 @@ namespace xt
             {
                 E input;
                 auto axis_numbers = arange<std::size_t>(e.shape().size());
-                std::vector<std::size_t> permutation(axis_numbers.begin(), axis_numbers.end());
-                permutation.erase(permutation.begin() + (ptrdiff_t) axis);
+                std::vector<std::size_t> permutation(axis_numbers.cbegin(), axis_numbers.cend());
+                permutation.erase(permutation.begin() + std::ptrdiff_t(axis));
                 if (input.layout() == layout_type::row_major)
                 {
                     permutation.push_back(axis);
@@ -257,7 +257,7 @@ namespace xt
     /**
      * Find position of minimal value in xexpression
      *
-     * @param a xexpression to compute argmin on
+     * @param e input xexpression
      * @param axis select axis (or none)
      *
      * @return returns xarray with positions of minimal value
@@ -281,10 +281,10 @@ namespace xt
     /**
      * Find position of maximal value in xexpression
      *
-     * @param a xexpression to compute argmin on
+     * @param e input xexpression
      * @param axis select axis (or none)
      *
-     * @return returns xarray with positions of minimal value
+     * @return returns xarray with positions of maximal value
      */
     template <class E>
     auto argmax(const xexpression<E>& e, std::size_t axis)
@@ -292,6 +292,24 @@ namespace xt
         using value_type = typename E::value_type;
         auto&& ed = eval(e.derived_cast());
         return detail::arg_func_impl(ed, axis, std::greater<value_type>());
+    }
+
+    /**
+     * Find unique elements of a xexpression. This returns a flattened xtensor with
+     * sorted, unique elements from the original expression.
+     *
+     * @param e input xexpression (will be flattened)
+     */
+    template <class E>
+    auto unique(const xexpression<E>& e)
+    {
+        auto sorted = sort(e, xnone());
+        auto end = std::unique(sorted.begin(), sorted.end());
+        std::size_t sz = static_cast<std::size_t>(std::distance(sorted.begin(), end));
+        // TODO check if we can shrink the vector without reallocation
+        auto result = xtensor<typename E::value_type, 1>::from_shape({sz});
+        std::copy(sorted.begin(), end, result.begin());
+        return result;
     }
 }
 

@@ -12,8 +12,8 @@
 #include <type_traits>
 #include <utility>
 
-#include "xtl/xoptional.hpp"
-#include "xtl/xoptional_sequence.hpp"
+#include <xtl/xoptional.hpp>
+#include <xtl/xoptional_sequence.hpp>
 
 #include "xarray.hpp"
 #include "xtensor.hpp"
@@ -103,7 +103,6 @@ namespace xt
             {
                 return arg().has_value();
             }
-
         };
 
         template <class T, class B, class Tag>
@@ -159,7 +158,7 @@ namespace xt
         struct optional_containers
         {
             using optional_expression = std::remove_const_t<E>;
-            using optional_container = typename optional_expression::container_type;
+            using optional_container = typename optional_expression::storage_type;
             using tmp_value_container = typename optional_container::base_container_type;
             using tmp_flag_container = typename optional_container::flag_container_type;
             using value_container = std::conditional_t<std::is_const<E>::value, const tmp_value_container, tmp_value_container>;
@@ -177,12 +176,12 @@ namespace xt
 
             static inline value_expression value(OA arg)
             {
-                return value_expression(std::move(arg.data().value()), arg.shape());
+                return value_expression(std::move(arg.storage().value()), arg.shape());
             }
 
             static inline flag_expression has_value(OA arg)
             {
-                return flag_expression(std::move(arg.data().has_value()), arg.shape());
+                return flag_expression(std::move(arg.storage().has_value()), arg.shape());
             }
         };
 
@@ -197,12 +196,12 @@ namespace xt
 
             static inline value_expression value(OA& arg)
             {
-                return value_expression(arg.data().value(), arg.shape());
+                return value_expression(arg.storage().value(), arg.shape());
             }
 
             static inline flag_expression has_value(OA& arg)
             {
-                return flag_expression(arg.data().has_value(), arg.shape());
+                return flag_expression(arg.storage().has_value(), arg.shape());
             }
         };
 
@@ -235,12 +234,12 @@ namespace xt
 
             static inline value_expression value(OT arg)
             {
-                return value_expression(std::move(arg.data().value()), arg.shape());
+                return value_expression(std::move(arg.storage().value()), arg.shape());
             }
 
             static inline flag_expression has_value(OT arg)
             {
-                return flag_expression(std::move(arg.data().has_value()), arg.shape());
+                return flag_expression(std::move(arg.storage().has_value()), arg.shape());
             }
         };
 
@@ -255,12 +254,12 @@ namespace xt
 
             static inline value_expression value(OT& arg)
             {
-                return value_expression(arg.data().value(), arg.shape());
+                return value_expression(arg.storage().value(), arg.shape());
             }
 
             static inline flag_expression has_value(OT& arg)
             {
-                return flag_expression(arg.data().has_value(), arg.shape());
+                return flag_expression(arg.storage().has_value(), arg.shape());
             }
         };
 
@@ -336,7 +335,7 @@ namespace xt
      * xoptional_function *
      **********************/
 
-#define DL DEFAULT_LAYOUT
+#define DL XTENSOR_DEFAULT_LAYOUT
 
     /**
      * @class xoptional_function
@@ -362,7 +361,7 @@ namespace xt
         using value_functor = typename F::template rebind<typename R::value_type>::type;
         using flag_functor = detail::optional_bitwise<bool>;
 
-        template <class Func, class U = std::enable_if<!std::is_base_of<Func, self_type>::value>>
+        template <class Func, class U = std::enable_if<!std::is_base_of<std::decay_t<Func>, self_type>::value>>
         xoptional_function(Func&& func, CT... e) noexcept;
 
         ~xoptional_function() = default;
@@ -399,12 +398,12 @@ namespace xt
      * xoptional_function implementation *
      *************************************/
 
-     /**
-      * Constructs an xoptional_function applying the specified function to the given
-      * arguments.
-      * @param func the function to apply
-      * @param e the \ref xexpression arguments
-      */
+    /**
+     * Constructs an xoptional_function applying the specified function to the given
+     * arguments.
+     * @param func the function to apply
+     * @param e the \ref xexpression arguments
+     */
     template <class F, class R, class... CT>
     template <class Func, class U>
     inline xoptional_function<F, R, CT...>::xoptional_function(Func&& func, CT... e) noexcept

@@ -20,7 +20,7 @@ namespace xt
     template <class D, bool is_const>
     class xoptional_assembly_iterator;
 
-#define DL DEFAULT_LAYOUT
+#define DL XTENSOR_DEFAULT_LAYOUT
 
     /***************************
      * xoptional_assembly_base *
@@ -119,11 +119,14 @@ namespace xt
         const inner_backstrides_type& backstrides() const noexcept;
 
         template <class S = shape_type>
-        void reshape(const S& shape, bool force = false);
+        void resize(const S& shape, bool force = false);
         template <class S = shape_type>
-        void reshape(const S& shape, layout_type l);
+        void resize(const S& shape, layout_type l);
         template <class S = shape_type>
-        void reshape(const S& shape, const strides_type& strides);
+        void resize(const S& shape, const strides_type& strides);
+
+        template <class S = shape_type>
+        void reshape(const S& shape, layout_type layout = static_layout);
 
         layout_type layout() const noexcept;
 
@@ -157,7 +160,7 @@ namespace xt
         const_reference element(It first, It last) const;
 
         template <class S>
-        bool broadcast_shape(S& shape) const;
+        bool broadcast_shape(S& shape, bool reuse_cache = false) const;
 
         template <class S>
         bool is_trivial_broadcast(const S& strides) const noexcept;
@@ -244,21 +247,37 @@ namespace xt
      * xoptional_assembly_iterator *
      *******************************/
 
+    namespace detail
+    {
+        template <class D, bool is_const>
+        using get_optional_reference_t = std::conditional_t<is_const,
+                                                            typename xoptional_assembly_base<D>::const_reference,
+                                                            typename xoptional_assembly_base<D>::reference>;
+
+        template <class D, bool is_const>
+        using get_optional_pointer_t = std::conditional_t<is_const,
+                                                          typename xoptional_assembly_base<D>::const_pointer,
+                                                          typename xoptional_assembly_base<D>::pointer>;
+    }
+
     template <class D, bool is_const>
     class xoptional_assembly_iterator
+        : public xtl::xrandom_access_iterator_base<xoptional_assembly_iterator<D, is_const>,
+                                                   typename xoptional_assembly_base<D>::value_type,
+                                                   typename xoptional_assembly_base<D>::difference_type,
+                                                   detail::get_optional_pointer_t<D, is_const>,
+                                                   detail::get_optional_reference_t<D, is_const>>
+
     {
     public:
 
         using self_type = xoptional_assembly_iterator<D, is_const>;
         using assembly_type = xoptional_assembly_base<D>;
-        using reference = std::conditional_t<is_const,
-                                             typename assembly_type::const_reference,
-                                             typename assembly_type::reference>;
-        using pointer = std::conditional_t<is_const,
-                                           typename assembly_type::const_pointer,
-                                           typename assembly_type::pointer>;
+        using value_type = typename xoptional_assembly_base<D>::value_type;
+        using reference = detail::get_optional_reference_t<D, is_const>;
+        using pointer = detail::get_optional_pointer_t<D, is_const>;
         using difference_type = typename assembly_type::difference_type;
-        using iterator_category = std::bidirectional_iterator_tag;
+        using iterator_category = std::random_access_iterator_tag;
 
         using value_expression = typename assembly_type::value_expression;
         using flag_expression = typename assembly_type::flag_expression;
@@ -272,15 +291,18 @@ namespace xt
         xoptional_assembly_iterator(value_iterator vit, flag_iterator fit) noexcept;
 
         self_type& operator++();
-        self_type operator++(int);
-
         self_type& operator--();
-        self_type operator--(int);
+
+        self_type& operator+=(difference_type n);
+        self_type& operator-=(difference_type n);
+
+        difference_type operator-(const self_type& rhs) const;
 
         reference operator*() const;
         pointer operator->() const;
 
         bool equal(const self_type& rhs) const;
+        bool less_than(const self_type& rhs) const;
 
     private:
 
@@ -293,8 +315,8 @@ namespace xt
                     const xoptional_assembly_iterator<D, is_const>& rhs);
 
     template <class D, bool is_const>
-    bool operator!=(const xoptional_assembly_iterator<D, is_const>& lhs,
-                    const xoptional_assembly_iterator<D, is_const>& rhs);
+    bool operator<(const xoptional_assembly_iterator<D, is_const>& lhs,
+                   const xoptional_assembly_iterator<D, is_const>& rhs);
 
     /******************************
      * xoptional_assembly_stepper *
@@ -327,8 +349,11 @@ namespace xt
 
         xoptional_assembly_stepper(value_stepper vs, flag_stepper fs) noexcept;
 
-        void step(size_type dim, size_type n = 1);
-        void step_back(size_type dim, size_type n = 1);
+
+        void step(size_type dim);
+        void step_back(size_type dim);
+        void step(size_type dim, size_type n);
+        void step_back(size_type dim, size_type n);
         void reset(size_type dim);
         void reset_back(size_type dim);
 
@@ -337,21 +362,11 @@ namespace xt
 
         reference operator*() const;
 
-        bool equal(const self_type& rhs) const;
-
     private:
 
         value_stepper m_vs;
         flag_stepper m_fs;
     };
-
-    template <class D, bool is_const>
-    bool operator==(const xoptional_assembly_stepper<D, is_const>& lhs,
-                    const xoptional_assembly_stepper<D, is_const>& rhs);
-
-    template <class D, bool is_const>
-    bool operator!=(const xoptional_assembly_stepper<D, is_const>& lhs,
-                    const xoptional_assembly_stepper<D, is_const>& rhs);
 
     /******************************************
      * xoptional_assembly_base implementation *
@@ -408,42 +423,55 @@ namespace xt
     //@}
 
     /**
-     * Reshapes the optional assembly.
+     * Resizes the optional assembly.
      * @param shape the new shape
      * @param force force reshaping, even if the shape stays the same (default: false)
      */
     template <class D>
     template <class S>
-    inline void xoptional_assembly_base<D>::reshape(const S& shape, bool force)
+    inline void xoptional_assembly_base<D>::resize(const S& shape, bool force)
     {
-        value().reshape(shape, force);
-        has_value().reshape(shape, force);
+        value().resize(shape, force);
+        has_value().resize(shape, force);
     }
 
     /**
-     * Reshapes the optional assembly.
+     * Resizes the optional assembly.
      * @param shape the new shape
      * @param l the new layout_type
      */
     template <class D>
     template <class S>
-    inline void xoptional_assembly_base<D>::reshape(const S& shape, layout_type l)
+    inline void xoptional_assembly_base<D>::resize(const S& shape, layout_type l)
     {
-        value().reshape(shape, l);
-        has_value().reshape(shape, l);
+        value().resize(shape, l);
+        has_value().resize(shape, l);
     }
 
     /**
-     * Reshapes the optional assembly.
+     * Resizes the optional assembly.
      * @param shape the new shape
      * @param strides the new strides
      */
     template <class D>
     template <class S>
-    inline void xoptional_assembly_base<D>::reshape(const S& shape, const strides_type& strides)
+    inline void xoptional_assembly_base<D>::resize(const S& shape, const strides_type& strides)
     {
-        value().reshape(shape, strides);
-        has_value().reshape(shape, strides);
+        value().resize(shape, strides);
+        has_value().resize(shape, strides);
+    }
+
+    /**
+     * Reshapes the optional assembly.
+     * @param shape the new shape
+     * @param layout the new layout
+     */
+    template <class D>
+    template <class S>
+    inline void xoptional_assembly_base<D>::reshape(const S& shape, layout_type layout)
+    {
+        value().reshape(shape, layout);
+        has_value().reshape(shape, layout);
     }
 
     /**
@@ -614,10 +642,10 @@ namespace xt
      */
     template <class D>
     template <class S>
-    inline bool xoptional_assembly_base<D>::broadcast_shape(S& shape) const
+    inline bool xoptional_assembly_base<D>::broadcast_shape(S& shape, bool reuse_cache) const
     {
-        bool res = value().broadcast_shape(shape);
-        return res && has_value().broadcast_shape(shape);
+        bool res = value().broadcast_shape(shape, reuse_cache);
+        return res && has_value().broadcast_shape(shape, reuse_cache);
     }
 
     /**
@@ -828,14 +856,6 @@ namespace xt
     }
 
     template <class D, bool C>
-    inline auto xoptional_assembly_iterator<D, C>::operator++(int) -> self_type
-    {
-        self_type tmp(*this);
-        ++(*this);
-        return tmp;
-    }
-
-    template <class D, bool C>
     inline auto xoptional_assembly_iterator<D, C>::operator--() -> self_type&
     {
         --m_vit;
@@ -844,11 +864,25 @@ namespace xt
     }
 
     template <class D, bool C>
-    inline auto xoptional_assembly_iterator<D, C>::operator--(int) -> self_type
+    inline auto xoptional_assembly_iterator<D, C>::operator+=(difference_type n) -> self_type&
     {
-        self_type tmp(*this);
-        --(*this);
-        return tmp;
+        m_vit += n;
+        m_fit += n;
+        return *this;
+    }
+
+    template <class D, bool C>
+    inline auto xoptional_assembly_iterator<D, C>::operator-=(difference_type n) -> self_type&
+    {
+        m_vit -= n;
+        m_fit -= n;
+        return *this;
+    }
+
+    template <class D, bool C>
+    inline auto xoptional_assembly_iterator<D, C>::operator-(const self_type& rhs) const -> difference_type
+    {
+        return m_vit - rhs.m_vit;
     }
 
     template <class D, bool C>
@@ -869,6 +903,12 @@ namespace xt
         return m_vit.equal(rhs.m_vit) && m_fit.equal(rhs.m_fit);
     }
 
+    template <class D, bool C>
+    inline bool xoptional_assembly_iterator<D, C>::less_than(const self_type& rhs) const
+    {
+        return m_vit.less_than(rhs.m_vit) && m_fit.less_than(rhs.m_fit);
+    }
+
     template <class D, bool is_const>
     inline bool operator==(const xoptional_assembly_iterator<D, is_const>& lhs,
                            const xoptional_assembly_iterator<D, is_const>& rhs)
@@ -877,10 +917,10 @@ namespace xt
     }
 
     template <class D, bool is_const>
-    inline bool operator!=(const xoptional_assembly_iterator<D, is_const>& lhs,
-                           const xoptional_assembly_iterator<D, is_const>& rhs)
+    inline bool operator<(const xoptional_assembly_iterator<D, is_const>& lhs,
+                          const xoptional_assembly_iterator<D, is_const>& rhs)
     {
-        return !(lhs == rhs);
+        return lhs.less_than(rhs);
     }
 
     /*********************************************
@@ -891,6 +931,20 @@ namespace xt
     inline xoptional_assembly_stepper<D, C>::xoptional_assembly_stepper(value_stepper vs, flag_stepper fs) noexcept
         : m_vs(vs), m_fs(fs)
     {
+    }
+
+    template <class D, bool C>
+    inline void xoptional_assembly_stepper<D, C>::step(size_type dim)
+    {
+        m_vs.step(dim);
+        m_fs.step(dim);
+    }
+
+    template <class D, bool C>
+    inline void xoptional_assembly_stepper<D, C>::step_back(size_type dim)
+    {
+        m_vs.step_back(dim);
+        m_fs.step_back(dim);
     }
 
     template <class D, bool C>
@@ -939,26 +993,6 @@ namespace xt
     inline auto xoptional_assembly_stepper<D, C>::operator*() const -> reference
     {
         return reference(*m_vs, *m_fs);
-    }
-
-    template <class D, bool C>
-    inline bool xoptional_assembly_stepper<D, C>::equal(const self_type& rhs) const
-    {
-        return m_vs.equal(rhs.m_vs) && m_fs.equal(rhs.m_fs);
-    }
-
-    template <class D, bool is_const>
-    inline bool operator==(const xoptional_assembly_stepper<D, is_const>& lhs,
-                           const xoptional_assembly_stepper<D, is_const>& rhs)
-    {
-        return lhs.equal(rhs);
-    }
-
-    template <class D, bool is_const>
-    inline bool operator!=(const xoptional_assembly_stepper<D, is_const>& lhs,
-                           const xoptional_assembly_stepper<D, is_const>& rhs)
-    {
-        return !(lhs == rhs);
     }
 }
 

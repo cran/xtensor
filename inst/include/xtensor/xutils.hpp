@@ -15,13 +15,14 @@
 #include <complex>
 #include <cstddef>
 #include <initializer_list>
+#include <iostream>
 #include <tuple>
 #include <type_traits>
 #include <utility>
 #include <vector>
 
-#include "xtl/xfunctional.hpp"
-#include "xtl/xtype_traits.hpp"
+#include <xtl/xfunctional.hpp>
+#include <xtl/xtype_traits.hpp>
 
 #include "xtensor_config.hpp"
 
@@ -388,86 +389,24 @@ namespace xt
         return size == N;
     }
 
-    /*************************************
-     * promote_shape and promote_strides *
-     *************************************/
+    /******************
+     * get_value_type *
+     ******************/
 
-    namespace detail
+    template <class T, class = void_t<>>
+    struct get_value_type
     {
-        template <class T1, class T2>
-        constexpr std::common_type_t<T1, T2> imax(const T1& a, const T2& b)
-        {
-            return a > b ? a : b;
-        }
+        using type = T;
+    };
 
-        // Variadic meta-function returning the maximal size of std::arrays.
-        template <class... T>
-        struct max_array_size;
+    template <class T>
+    struct get_value_type<T, void_t<typename T::value_type>>
+    {
+        using type = typename T::value_type;
+    };
 
-        template <>
-        struct max_array_size<>
-        {
-            static constexpr std::size_t value = 0;
-        };
-
-        template <class T, class... Ts>
-        struct max_array_size<T, Ts...> : std::integral_constant<std::size_t, imax(std::tuple_size<T>::value, max_array_size<Ts...>::value)>
-        {
-        };
-
-        // Simple is_array and only_array meta-functions
-        template <class S>
-        struct is_array
-        {
-            static constexpr bool value = false;
-        };
-
-        template <class T, std::size_t N>
-        struct is_array<std::array<T, N>>
-        {
-            static constexpr bool value = true;
-        };
-
-        template <class... S>
-        using only_array = xtl::conjunction<is_array<S>...>;
-
-        // The promote_index meta-function returns std::vector<promoted_value_type> in the
-        // general case and an array of the promoted value type and maximal size if all
-        // arguments are of type std::array
-
-        template <bool A, class... S>
-        struct promote_index_impl;
-
-        template <class... S>
-        struct promote_index_impl<false, S...>
-        {
-            using type = std::vector<typename std::common_type<typename S::value_type...>::type>;
-        };
-
-        template <class... S>
-        struct promote_index_impl<true, S...>
-        {
-            using type = std::array<typename std::common_type<typename S::value_type...>::type, max_array_size<S...>::value>;
-        };
-
-        template <>
-        struct promote_index_impl<true>
-        {
-            using type = std::array<std::size_t, 0>;
-        };
-
-        template <class... S>
-        struct promote_index
-        {
-            using type = typename promote_index_impl<only_array<S...>::value, S...>::type;
-        };
-    }
-
-    template <class... S>
-    using promote_shape_t = typename detail::promote_index<S...>::type;
-
-    template <class... S>
-    using promote_strides_t = typename detail::promote_index<S...>::type;
+    template <class T>
+    using get_value_type_t = typename get_value_type<T>::type;
 
     /***************************
      * apply_cv implementation *
@@ -573,21 +512,23 @@ namespace xt
     }
 
     /*****************************************
-     * has_raw_data_interface implementation *
+     * has_data_interface implementation *
      *****************************************/
 
     template <class T>
-    class has_raw_data_interface
+    class has_data_interface
     {
+        // the test function has one argument -- the return type of the function we're searching if it exists
         template <class C>
-        static std::true_type test(decltype(std::declval<C>().raw_data_offset()));
+        static std::true_type test(decltype(std::declval<C>().data()));
 
         template <class C>
         static std::false_type test(...);
 
     public:
 
-        constexpr static bool value = decltype(test<T>(std::size_t(0)))::value == true;
+        // we try to call the test function with the return type and report the result
+        constexpr static bool value = decltype(test<T>(std::declval<const std::add_pointer_t<typename T::value_type>>()))::value == true;
     };
 
     /******************
@@ -604,17 +545,17 @@ namespace xt
      * xtrivial_default_construct implemenation *
      ********************************************/
 
-    #if !defined(__GNUG__) || defined(_LIBCPP_VERSION) || defined(_GLIBCXX_USE_CXX11_ABI)
+#if !defined(__GNUG__) || defined(_LIBCPP_VERSION) || defined(_GLIBCXX_USE_CXX11_ABI)
 
     template <class T>
     using xtrivially_default_constructible = std::is_trivially_default_constructible<T>;
 
-    #else
+#else
 
     template <class T>
     using xtrivially_default_constructible = std::has_trivial_default_constructor<T>;
 
-    #endif
+#endif
 
     /*************************
      * conditional type cast *
@@ -624,8 +565,7 @@ namespace xt
     struct conditional_cast_functor;
 
     template <class T>
-    struct conditional_cast_functor<false, T>
-    : public xtl::identity
+    struct conditional_cast_functor<false, T> : public xtl::identity
     {
     };
 
@@ -665,6 +605,12 @@ namespace xt
     template <class... T>
     struct promote_type;
 
+    template <>
+    struct promote_type<>
+    {
+        using type = void;
+    };
+
     template <class T>
     struct promote_type<T>
     {
@@ -674,13 +620,13 @@ namespace xt
     template <class T0, class T1>
     struct promote_type<T0, T1>
     {
-        using type = decltype(*(std::decay_t<T0>*)0 + *(std::decay_t<T1>*)0);
+        using type = decltype(std::declval<std::decay_t<T0>>() + std::declval<std::decay_t<T1>>());
     };
 
     template <class T0, class... REST>
     struct promote_type<T0, REST...>
     {
-        using type = decltype(*(std::decay_t<T0>*)0 + *(typename promote_type<REST...>::type*)0);
+        using type = decltype(std::declval<std::decay_t<T0>>() + std::declval<typename promote_type<REST...>::type>());
     };
 
     template <>
@@ -726,6 +672,7 @@ namespace xt
         static constexpr bool is_long_double = std::is_same<V, long double>::value;
 
     public:
+
         using type = std::conditional_t<is_arithmetic,
                         std::conditional_t<is_integral,
                             std::conditional_t<is_signed, long long, unsigned long long>,
@@ -752,7 +699,7 @@ namespace xt
         using std::sqrt;
 
         template <class T>
-        using real_promote_type_t = decltype(sqrt(*(std::decay_t<T>*)0));
+        using real_promote_type_t = decltype(sqrt(std::declval<std::decay_t<T>>()));
     }
 
     /**
@@ -873,7 +820,7 @@ namespace xt
             template <class U>
             static typename U::value_type test(U*, typename U::value_type* = 0);
 
-            using T = decltype(test((ARRAY*)0));
+            using T = decltype(test(std::declval<ARRAY*>()));
 
             static const bool value = !std::is_same<T, void*>::value;
 
@@ -964,6 +911,85 @@ namespace xt
      */
     template <class T>
     using squared_norm_type_t = typename squared_norm_type<T>::type;
+
+    namespace alloc_tracking
+    {
+        inline bool& enabled()
+        {
+            static bool enabled;
+            return enabled;
+        };
+
+        inline void enable()
+        {
+            enabled() = true;
+        }
+
+        inline void disable()
+        {
+            enabled() = false;
+        }
+
+        enum policy
+        {
+            print,
+            assert
+        };
+    }
+
+    template <class T, class A, alloc_tracking::policy P>
+    struct tracking_allocator
+        : private A
+    {
+        using base_type = A;
+        using value_type = typename A::value_type;
+        using reference = typename A::reference;
+        using const_reference = typename A::const_reference;
+        using pointer = typename A::pointer;
+        using const_pointer = typename A::const_pointer;
+        using size_type = typename A::size_type;
+        using difference_type = typename A::difference_type;
+
+        tracking_allocator() = default;
+
+        T* allocate(std::size_t n)
+        {
+            if (alloc_tracking::enabled())
+            {
+                if (P == alloc_tracking::print)
+                {
+                    std::cout << "xtensor allocating: " << n << "" << std::endl;
+                }
+                else if (P == alloc_tracking::assert)
+                {
+                    throw std::runtime_error("xtensor allocation of " + std::to_string(n) + " elements detected");
+                }
+            }
+            return base_type::allocate(n);
+        }
+
+        using base_type::deallocate;
+        using base_type::construct;
+        using base_type::destroy;
+
+        template <class U>
+        struct rebind
+        {
+            using other = tracking_allocator<U, typename A::template rebind<U>::other, P>;
+        };
+    };
+
+    template <class T, class AT, alloc_tracking::policy PT, class U, class AU, alloc_tracking::policy PU>
+    inline bool operator==(const tracking_allocator<T, AT, PT>&, const tracking_allocator<U, AU, PU>&)
+    {
+      return std::is_same<AT, AU>::value;
+    }
+
+    template <class T, class AT, alloc_tracking::policy PT, class U, class AU, alloc_tracking::policy PU>
+    inline bool operator!=(const tracking_allocator<T, AT, PT>& a, const tracking_allocator<U, AU, PU>& b)
+    {
+      return !(a == b);
+    }
 }
 
 #endif

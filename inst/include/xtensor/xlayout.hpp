@@ -16,7 +16,7 @@ namespace xt
     /*! layout_type enum for xcontainer based xexpressions */
     enum class layout_type
     {
-        /*! dynamic layout_type: you can reshape to row major, column major, or use custom strides */
+        /*! dynamic layout_type: you can resize to row major, column major, or use custom strides */
         dynamic = 0x00,
         /*! layout_type compatible with all others */
         any = 0xFF,
@@ -86,7 +86,7 @@ namespace xt
     constexpr layout_type default_assignable_layout(layout_type l) noexcept
     {
         return (l == layout_type::row_major || l == layout_type::column_major) ?
-            l : DEFAULT_LAYOUT;
+            l : XTENSOR_DEFAULT_LAYOUT;
     }
 }
 

@@ -20,7 +20,7 @@ namespace xt
 {
 
     template <class shape_type>
-    auto compute_size(const shape_type& shape) noexcept;
+    std::size_t compute_size(const shape_type& shape) noexcept;
 
     /***************
      * data offset *
@@ -53,6 +53,16 @@ namespace xt
     void adapt_strides(const shape_type& shape, strides_type& strides,
                        backstrides_type& backstrides) noexcept;
 
+    /*****************
+     * unravel_index *
+     *****************/
+
+    template <class S>
+    S unravel_from_strides(typename S::value_type index, const S& strides, layout_type l);
+
+    template <class S>
+    S unravel_index(typename S::value_type index, const S& shape, layout_type l);
+
     /***********************
      * broadcast functions *
      ***********************/
@@ -79,7 +89,6 @@ namespace xt
         else
         {
             auto leading_stride = (l == layout_type::row_major ? c.strides().back() : c.strides().front());
-            leading_stride = std::max(leading_stride, typename strides_type::value_type(1));
             return end + difference_type(leading_stride - 1);
         }
     }
@@ -89,10 +98,10 @@ namespace xt
      ******************/
 
     template <class shape_type>
-    inline auto compute_size(const shape_type& shape) noexcept
+    inline std::size_t compute_size(const shape_type& shape) noexcept
     {
         using size_type = std::decay_t<typename shape_type::value_type>;
-        return std::accumulate(shape.cbegin(), shape.cend(), size_type(1), std::multiplies<size_type>());
+        return static_cast<std::size_t>(std::accumulate(shape.cbegin(), shape.cend(), size_type(1), std::multiplies<size_type>()));
     }
 
     namespace detail
@@ -142,7 +151,7 @@ namespace xt
     inline size_type element_offset(const S& strides, It first, It last) noexcept
     {
         using difference_type = typename std::iterator_traits<It>::difference_type;
-        auto size = static_cast<difference_type>(std::min(static_cast<typename S::size_type>(std::distance(first, last)), strides.size()));
+        auto size = static_cast<difference_type>((std::min)(static_cast<typename S::size_type>(std::distance(first, last)), strides.size()));
         return std::inner_product(last - size, last, strides.cend() - size, size_type(0));
     }
 
@@ -211,6 +220,40 @@ namespace xt
     }
 
     template <class shape_type, class strides_type>
+    inline bool do_strides_match(const shape_type& shape, const strides_type& strides, layout_type l)
+    {
+        std::size_t data_size = 1;
+        if (l == layout_type::row_major)
+        {
+            for (std::size_t i = strides.size(); i != 0; --i)
+            {
+                if ((shape[i - 1] == 1 && strides[i - 1] != 0) || (shape[i - 1] != 1 && strides[i - 1] != data_size))
+                {
+                    return false;
+                }
+                data_size *= shape[i - 1];
+            }
+            return true;
+        }
+        else if (l == layout_type::column_major)
+        {
+            for (std::size_t i = 0; i < strides.size(); ++i)
+            {
+                if ((shape[i] != 1 && strides[i] != data_size) || (shape[i] == 1 && strides[i] != 0))
+                {
+                    return false;
+                }
+                data_size *= shape[i];
+            }
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+    template <class shape_type, class strides_type>
     inline void adapt_strides(const shape_type& shape, strides_type& strides) noexcept
     {
         for (typename shape_type::size_type i = 0; i < shape.size(); ++i)
@@ -229,40 +272,107 @@ namespace xt
         }
     }
 
+    namespace detail
+    {
+        template <class S>
+        inline S unravel_noexcept(typename S::value_type idx, const S& strides, layout_type l) noexcept
+        {
+            using value_type = typename S::value_type;
+            using size_type = typename S::size_type;
+            S result = xtl::make_sequence<S>(strides.size(), 0);
+            if (l == layout_type::row_major)
+            {
+                for (size_type i = 0; i < strides.size(); ++i)
+                {
+                    value_type str = strides[i];
+                    value_type quot = str != 0 ? idx / str : 0;
+                    idx = str != 0 ? idx % str : idx;
+                    result[i] = quot;
+                }
+            }
+            else
+            {
+                for (size_type i = strides.size(); i != 0; --i)
+                {
+                    value_type str = strides[i - 1];
+                    value_type quot = str != 0 ? idx / str : 0;
+                    idx = str != 0 ? idx % str : idx;
+                    result[i - 1] = quot;
+                }
+            }
+            return result;
+        }
+    }
+
+    template <class S>
+    inline S unravel_from_strides(typename S::value_type index, const S& strides, layout_type l)
+    {
+        if (l != layout_type::row_major && l != layout_type::column_major)
+        {
+            throw std::runtime_error("unravel_index: dynamic layout not supported");
+        }
+        return detail::unravel_noexcept(index, strides, l);
+    }
+
+    template <class S>
+    inline S unravel_index(typename S::value_type index, const S& shape, layout_type l)
+    {
+        S strides = xtl::make_sequence<S>(shape.size(), 0);
+        compute_strides(shape, l, strides);
+        return unravel_from_strides(index, strides, l);
+    }
+
     template <class S1, class S2>
     inline bool broadcast_shape(const S1& input, S2& output)
     {
         bool trivial_broadcast = (input.size() == output.size());
-        auto input_iter = input.crbegin();
-        auto output_iter = output.rbegin();
-        for (; input_iter != input.crend(); ++input_iter, ++output_iter)
+        // Indices are faster than reverse iterators
+        using value_type = typename S2::value_type;
+        auto output_index = output.size();
+        auto input_index = input.size();
+        for (; input_index != 0; --input_index, --output_index)
         {
-            if (*output_iter == 1)
+            // First case: output = (0, 0, ...., 0)
+            // output is a new shape that has not been through
+            // the broadcast process yet; broadcast is trivial
+            if (output[output_index - 1] == 0)
             {
-                *output_iter = *input_iter;
+                output[output_index - 1] = static_cast<value_type>(input[input_index - 1]);
             }
-            else if ((*input_iter != 1) && (*output_iter != *input_iter))
+            // Second case: output has been initialized to 1. Broacast is trivial
+            // only if input is 1 to.
+            else if (output[output_index - 1] == 1)
             {
-                throw broadcast_error(output, input);
+                output[output_index - 1] = static_cast<value_type>(input[input_index - 1]);
+                trivial_broadcast = trivial_broadcast && (input[input_index - 1] == 1);
             }
-            trivial_broadcast = trivial_broadcast && (*output_iter == *input_iter);
+            // Third case: output has been initialized to something different from 1.
+            // if input is 1, then the broadcast is not trivial
+            else if (input[input_index - 1] == 1)
+            {
+                trivial_broadcast = false;
+            }
+            // Last case: input and output must have the same value, else
+            // shape are not compatible and an exception is thrown
+            else if (static_cast<value_type>(input[input_index - 1]) != output[output_index - 1])
+            {
+                throw_broadcast_error(output, input);
+            }
         }
         return trivial_broadcast;
     }
 
     template <class S1, class S2>
-    inline bool broadcastable(const S1& s1, const S2& s2)
+    inline bool broadcastable(const S1& src_shape, const S2& dst_shape)
     {
-        auto iter1 = s1.crbegin();
-        auto iter2 = s2.crbegin();
-        for (; iter1 != s1.crend() && iter2 != s2.crend(); ++iter1, ++iter2)
+        auto src_iter = src_shape.crbegin();
+        auto dst_iter = dst_shape.crbegin();
+        bool res = dst_shape.size() >= src_shape.size();
+        for (; src_iter != src_shape.crend() && res; ++src_iter, ++dst_iter)
         {
-            if ((*iter2 != 1) && (*iter1 != 1) && (*iter2 != *iter1))
-            {
-                return false;
-            }
+            res = (*src_iter == *dst_iter) || (*src_iter == 1);
         }
-        return true;
+        return res;
     }
 }
 

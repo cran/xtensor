@@ -1,7 +1,7 @@
 Package: xtensor
 Type: Package
 Title: Headers for the 'xtensor' Library
-Version: 0.4.0-0
+Version: 0.6.0-0
 Author: Johan Mabille, Sylvain Corlay and Wolf Vollprecht
 Maintainer: Sylvain Corlay <sylvain.corlay@gmail.com>
 Description: The 'xtensor' C++ library for numerical analysis with
@@ -16,6 +16,6 @@ Imports: Rcpp
 LinkingTo: Rcpp
 LazyData: true
 NeedsCompilation: yes
-Packaged: 2017-12-18 10:38:25 UTC; sylvain
+Packaged: 2018-05-25 13:20:58 UTC; scorlay
 Repository: CRAN
-Date/Publication: 2017-12-18 10:51:21 UTC
+Date/Publication: 2018-05-25 16:02:22 UTC

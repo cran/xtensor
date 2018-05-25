@@ -17,7 +17,6 @@
 
 namespace xt
 {
-
     /**
      * @class xsemantic_base
      * @brief Base interface for assignable xexpressions.
@@ -52,7 +51,7 @@ namespace xt
 
         template <class E>
         disable_xexpression<E, derived_type&> operator%=(const E&);
-        
+
         template <class E>
         disable_xexpression<E, derived_type&> operator&=(const E&);
 
@@ -100,10 +99,10 @@ namespace xt
 
         template <class E>
         derived_type& divides_assign(const xexpression<E>&);
-        
+
         template <class E>
         derived_type& modulus_assign(const xexpression<E>&);
-        
+
     protected:
 
         xsemantic_base() = default;
@@ -165,6 +164,28 @@ namespace xt
         derived_type& operator=(const xexpression<E>&);
     };
 
+    namespace detail
+    {
+        template <class E>
+        struct has_container_semantics_impl : std::is_base_of<xcontainer_semantic<std::decay_t<E>>, std::decay_t<E>>
+        {
+        };
+
+        template <class E>
+        struct has_container_semantics_impl<xcontainer_semantic<E>> : std::true_type
+        {
+        };
+    }
+
+    template <class E>
+    using has_container_semantics = detail::has_container_semantics_impl<E>;
+
+    template <class E, class R = void>
+    using enable_xcontainer_semantics = typename std::enable_if<has_container_semantics<E>::value, R>::type;
+
+    template <class E, class R = void>
+    using disable_xcontainer_semantics = typename std::enable_if<!has_container_semantics<E>::value, R>::type;
+
     /**
      * @class xview_semantic
      * @brief Implementation of the xsemantic_base interface for
@@ -209,6 +230,28 @@ namespace xt
         template <class E>
         derived_type& operator=(const xexpression<E>&);
     };
+
+    namespace detail
+    {
+        template <class E>
+        struct has_view_semantics_impl : std::is_base_of<xview_semantic<std::decay_t<E>>, std::decay_t<E>>
+        {
+        };
+
+        template <class E>
+        struct has_view_semantics_impl<xview_semantic<E>> : std::true_type
+        {
+        };
+    }
+
+    template <class E>
+    using has_view_semantics = detail::has_view_semantics_impl<E>;
+
+    template <class E, class R = void>
+    using enable_xview_semantics = typename std::enable_if<has_view_semantics<E>::value, R>::type;
+
+    template <class E, class R = void>
+    using disable_xview_semantics = typename std::enable_if<!has_view_semantics<E>::value, R>::type;
 
     /*********************************
      * xsemantic_base implementation *
@@ -277,7 +320,7 @@ namespace xt
     {
         return this->derived_cast().scalar_computed_assign(e, std::modulus<>());
     }
-    
+
     /**
      * Computes the bitwise and of \c *this and the scalar \c e and assigns it to \c *this.
      * @param e the scalar involved in the operation.
@@ -373,7 +416,7 @@ namespace xt
     {
         return operator=(this->derived_cast() % e.derived_cast());
     }
-    
+
     /**
      * Computes the bitwise and of \c *this and the xexpression \c e and assigns it to \c *this.
      * @param e the xexpression involved in the operation.
@@ -491,7 +534,7 @@ namespace xt
     {
         return this->derived_cast().computed_assign(this->derived_cast() % e.derived_cast());
     }
-    
+
     template <class D>
     template <class E>
     inline auto xsemantic_base<D>::operator=(const xexpression<E>& e) -> derived_type&
@@ -594,7 +637,19 @@ namespace xt
     template <class E>
     inline auto xview_semantic<D>::operator=(const xexpression<E>& e) -> derived_type&
     {
-        return base_type::operator=(e);
+        bool cond = (e.derived_cast().shape().size() == this->derived_cast().dimension()) &&
+            std::equal(this->derived_cast().shape().begin(),
+                       this->derived_cast().shape().end(),
+                       e.derived_cast().shape().begin());
+        if (!cond)
+        {
+            base_type::operator=(broadcast(e.derived_cast(), this->derived_cast().shape()));
+        }
+        else
+        {
+            base_type::operator=(e);
+        }
+        return this->derived_cast();
     }
 }
 
