@@ -6,8 +6,8 @@
 * The full license is in the file LICENSE, distributed with this software. *
 ****************************************************************************/
 
-#ifndef R_TENSOR_HPP
-#define R_TENSOR_HPP
+#ifndef XTENSOR_R_TENSOR_HPP
+#define XTENSOR_R_TENSOR_HPP
 
 #include <algorithm>
 #include <array>
@@ -19,9 +19,6 @@
 #include "xtensor/xiterator.hpp"
 #include "xtensor/xsemantic.hpp"
 #include "xtensor/xutils.hpp"
-
-#include <Rcpp.h>
-#include <RcppCommon.h>
 
 #include "rcontainer.hpp"
 
@@ -253,7 +250,7 @@ namespace xt
         : base_type()
     {
         init_from_shape(rhs.shape());
-        std::copy(rhs.storage().begin(), rhs.storage().end(), this->storage().begin());
+        std::copy(rhs.storage().cbegin(), rhs.storage().cend(), this->storage().begin());
     }
 
     /**

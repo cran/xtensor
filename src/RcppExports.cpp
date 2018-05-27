@@ -6,20 +6,20 @@
 
 using namespace Rcpp;
 
-// rcpp_hello_xtensor
-xt::rtensor<double, 2> rcpp_hello_xtensor(xt::rtensor<int, 1> tens);
-RcppExport SEXP _xtensor_rcpp_hello_xtensor(SEXP tensSEXP) {
+// xtensor_r_example
+xt::rtensor<double, 2> xtensor_r_example(xt::rtensor<int, 1> tens);
+RcppExport SEXP _xtensor_xtensor_r_example(SEXP tensSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< xt::rtensor<int, 1> >::type tens(tensSEXP);
-    rcpp_result_gen = Rcpp::wrap(rcpp_hello_xtensor(tens));
+    rcpp_result_gen = Rcpp::wrap(xtensor_r_example(tens));
     return rcpp_result_gen;
 END_RCPP
 }
 
 static const R_CallMethodDef CallEntries[] = {
-    {"_xtensor_rcpp_hello_xtensor", (DL_FUNC) &_xtensor_rcpp_hello_xtensor, 1},
+    {"_xtensor_xtensor_r_example", (DL_FUNC) &_xtensor_xtensor_r_example, 1},
     {NULL, NULL, 0}
 };
 
