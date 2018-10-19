@@ -72,12 +72,11 @@ namespace xt
         using iterable_base = xconst_iterable<self_type>;
         using inner_shape_type = typename iterable_base::inner_shape_type;
         using shape_type = inner_shape_type;
-        using strides_type = S;
 
         using stepper = typename iterable_base::stepper;
         using const_stepper = typename iterable_base::const_stepper;
 
-        static constexpr layout_type static_layout = layout_type::any;
+        static constexpr layout_type static_layout = layout_type::dynamic;
         static constexpr bool contiguous_layout = false;
 
         template <class Func>
@@ -92,6 +91,8 @@ namespace xt
         const_reference operator()(Args... args) const;
         template <class... Args>
         const_reference at(Args... args) const;
+        template <class... Args>
+        const_reference unchecked(Args... args) const;
         template <class OS>
         disable_integral_t<OS, const_reference> operator[](const OS& index) const;
         template <class I>
@@ -105,12 +106,15 @@ namespace xt
         bool broadcast_shape(O& shape, bool reuse_cache = false) const;
 
         template <class O>
-        bool is_trivial_broadcast(const O& /*strides*/) const noexcept;
+        bool has_linear_assign(const O& /*strides*/) const noexcept;
 
         template <class O>
         const_stepper stepper_begin(const O& shape) const noexcept;
         template <class O>
         const_stepper stepper_end(const O& shape, layout_type) const noexcept;
+
+        template <class E, class FE = F, class = std::enable_if_t<has_assign_to<E, FE>::value>>
+        void assign_to(xexpression<E>& e) const noexcept;
 
     private:
 
@@ -220,6 +224,32 @@ namespace xt
         return this->operator()(args...);
     }
 
+    /**
+     * Returns a constant reference to the element at the specified position in the expression.
+     * @param args a list of indices specifying the position in the expression. Indices
+     * must be unsigned integers, the number of indices must be equal to the number of
+     * dimensions of the expression, else the behavior is undefined.
+     *
+     * @warning This method is meant for performance, for expressions with a dynamic
+     * number of dimensions (i.e. not known at compile time). Since it may have
+     * undefined behavior (see parameters), operator() should be prefered whenever
+     * it is possible.
+     * @warning This method is NOT compatible with broadcasting, meaning the following
+     *  code has undefined behavior:
+     * \code{.cpp}
+     * xt::xarray<double> a = {{0, 1}, {2, 3}};
+     * xt::xarray<double> b = {0, 1};
+     * auto fd = a + b;
+     * double res = fd.uncheked(0, 1);
+     * \endcode
+     */
+    template <class F, class R, class S>
+    template <class... Args>
+    inline auto xgenerator<F, R, S>::unchecked(Args... args) const -> const_reference
+    {
+        return m_f(args...);
+    }
+
     template <class F, class R, class S>
     template <class OS>
     inline auto xgenerator<F, R, S>::operator[](const OS& index) const
@@ -266,6 +296,7 @@ namespace xt
     /**
      * Broadcast the shape of the function to the specified parameter.
      * @param shape the result shape
+     * @param reuse_cache parameter for internal optimization
      * @return a boolean indicating whether the broadcasting is trivial
      */
     template <class F, class R, class S>
@@ -276,13 +307,13 @@ namespace xt
     }
 
     /**
-     * Compares the specified strides with those of the container to see whether
-     * the broadcasting is trivial.
-     * @return a boolean indicating whether the broadcasting is trivial
+     * Checks whether the xgenerator can be linearly assigned to an expression
+     * with the specified strides.
+     * @return a boolean indicating whether a linear assign is possible
      */
     template <class F, class R, class S>
     template <class O>
-    inline bool xgenerator<F, R, S>::is_trivial_broadcast(const O& /*strides*/) const noexcept
+    inline bool xgenerator<F, R, S>::has_linear_assign(const O& /*strides*/) const noexcept
     {
         return false;
     }
@@ -302,6 +333,14 @@ namespace xt
     {
         size_type offset = shape.size() - dimension();
         return const_stepper(this, offset, true);
+    }
+
+    template <class F, class R, class S>
+    template <class E, class, class>
+    inline void xgenerator<F, R, S>::assign_to(xexpression<E>& e) const noexcept
+    {
+        e.derived_cast().resize(m_shape);
+        m_f.assign_to(e);
     }
 
     template <class F, class R, class S>

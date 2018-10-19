@@ -168,6 +168,9 @@ namespace xt
         template <class... Args>
         reference at(Args... args);
 
+        template <class... Args>
+        reference unchecked(Args... args);
+
         template <class S>
         disable_integral_t<S, reference> operator[](const S& index);
         template <class I>
@@ -179,6 +182,9 @@ namespace xt
 
         template <class... Args>
         const_reference operator()(Args... args) const;
+
+        template <class... Args>
+        const_reference unchecked(Args... args) const;
 
         template <class... Args>
         const_reference at(Args... args) const;
@@ -196,7 +202,7 @@ namespace xt
         bool broadcast_shape(S& shape, bool reuse_cache = false) const;
 
         template <class S>
-        bool is_trivial_broadcast(const S& strides) const;
+        bool has_linear_assign(const S& strides) const;
 
         template <layout_type L = DL>
         auto begin() noexcept;
@@ -254,32 +260,20 @@ namespace xt
         template <class S, layout_type L = DL>
         const_reverse_broadcast_iterator<S, L> crend(const S& shape) const noexcept;
 
-        template <layout_type L = DL>
         storage_iterator storage_begin() noexcept;
-        template <layout_type L = DL>
         storage_iterator storage_end() noexcept;
 
-        template <layout_type L = DL>
         const_storage_iterator storage_begin() const noexcept;
-        template <layout_type L = DL>
         const_storage_iterator storage_end() const noexcept;
-        template <layout_type L = DL>
         const_storage_iterator storage_cbegin() const noexcept;
-        template <layout_type L = DL>
         const_storage_iterator storage_cend() const noexcept;
 
-        template <layout_type L = DL>
         reverse_storage_iterator storage_rbegin() noexcept;
-        template <layout_type L = DL>
         reverse_storage_iterator storage_rend() noexcept;
 
-        template <layout_type L = DL>
         const_reverse_storage_iterator storage_rbegin() const noexcept;
-        template <layout_type L = DL>
         const_reverse_storage_iterator storage_rend() const noexcept;
-        template <layout_type L = DL>
         const_reverse_storage_iterator storage_crbegin() const noexcept;
-        template <layout_type L = DL>
         const_reverse_storage_iterator storage_crend() const noexcept;
 
         template <class S>
@@ -544,6 +538,32 @@ namespace xt
 
     /**
      * Returns a reference to the element at the specified position in the expression.
+     * @param args a list of indices specifying the position in the expression. Indices
+     * must be unsigned integers, the number of indices must be equal to the number of
+     * dimensions of the expression, else the behavior is undefined.
+     *
+     * @warning This method is meant for performance, for expressions with a dynamic
+     * number of dimensions (i.e. not known at compile time). Since it may have
+     * undefined behavior (see parameters), operator() should be prefered whenever
+     * it is possible.
+     * @warning This method is NOT compatible with broadcasting, meaning the following
+     * code has undefined behavior:
+     * \code{.cpp}
+     * xt::xarray<double> a = {{0, 1}, {2, 3}};
+     * xt::xarray<double> b = {0, 1};
+     * auto fd = a + b;
+     * double res = fd.uncheked(0, 1);
+     * \endcode
+     */
+    template <class F, class CT>
+    template <class... Args>
+    inline auto xfunctor_view<F, CT>::unchecked(Args... args) -> reference
+    {
+        return m_functor(m_e.unchecked(args...));
+    }
+
+    /**
+     * Returns a reference to the element at the specified position in the expression.
      * @param index a sequence of indices specifying the position in the function. Indices
      * must be unsigned integers, the number of indices in the sequence should be equal or greater
      * than the number of dimensions of the container.
@@ -619,6 +639,32 @@ namespace xt
 
     /**
      * Returns a constant reference to the element at the specified position in the expression.
+     * @param args a list of indices specifying the position in the expression. Indices
+     * must be unsigned integers, the number of indices must be equal to the number of
+     * dimensions of the expression, else the behavior is undefined.
+     *
+     * @warning This method is meant for performance, for expressions with a dynamic
+     * number of dimensions (i.e. not known at compile time). Since it may have
+     * undefined behavior (see parameters), operator() should be prefered whenever
+     * it is possible.
+     * @warning This method is NOT compatible with broadcasting, meaning the following
+     * code has undefined behavior:
+     * \code{.cpp}
+     * xt::xarray<double> a = {{0, 1}, {2, 3}};
+     * xt::xarray<double> b = {0, 1};
+     * auto fd = a + b;
+     * double res = fd.uncheked(0, 1);
+     * \endcode
+     */
+    template <class F, class CT>
+    template <class... Args>
+    inline auto xfunctor_view<F, CT>::unchecked(Args... args) const -> const_reference
+    {
+        return m_functor(m_e.unchecked(args...));
+    }
+
+    /**
+     * Returns a constant reference to the element at the specified position in the expression.
      * @param index a sequence of indices specifying the position in the function. Indices
      * must be unsigned integers, the number of indices in the sequence should be equal or greater
      * than the number of dimensions of the container.
@@ -679,15 +725,15 @@ namespace xt
     }
 
     /**
-     * Compares the specified strides with those of the container to see whether
-     * the broadcasting is trivial.
-     * @return a boolean indicating whether the broadcasting is trivial
-     */
+    * Checks whether the xfunctor_view can be linearly assigned to an expression
+    * with the specified strides.
+    * @return a boolean indicating whether a linear assign is possible
+    */
     template <class F, class CT>
     template <class S>
-    inline bool xfunctor_view<F, CT>::is_trivial_broadcast(const S& strides) const
+    inline bool xfunctor_view<F, CT>::has_linear_assign(const S& strides) const
     {
-        return m_e.is_trivial_broadcast(strides);
+        return m_e.has_linear_assign(strides);
     }
     //@}
 
@@ -1025,87 +1071,75 @@ namespace xt
     //@}
 
     template <class F, class CT>
-    template <layout_type L>
     inline auto xfunctor_view<F, CT>::storage_begin() noexcept -> storage_iterator
     {
-        return storage_iterator(m_e.template storage_begin<L>(), &m_functor);
+        return storage_iterator(m_e.storage_begin(), &m_functor);
     }
 
     template <class F, class CT>
-    template <layout_type L>
     inline auto xfunctor_view<F, CT>::storage_end() noexcept -> storage_iterator
     {
-        return storage_iterator(m_e.template storage_end<L>(), &m_functor);
+        return storage_iterator(m_e.storage_end(), &m_functor);
     }
 
     template <class F, class CT>
-    template <layout_type L>
     inline auto xfunctor_view<F, CT>::storage_begin() const noexcept -> const_storage_iterator
     {
-        return const_storage_iterator(m_e.template storage_begin<L>(), &m_functor);
+        return const_storage_iterator(m_e.storage_begin(), &m_functor);
     }
 
     template <class F, class CT>
-    template <layout_type L>
     inline auto xfunctor_view<F, CT>::storage_end() const noexcept -> const_storage_iterator
     {
-        return const_storage_iterator(m_e.template storage_end<L>(), &m_functor);
+        return const_storage_iterator(m_e.storage_end(), &m_functor);
     }
 
     template <class F, class CT>
-    template <layout_type L>
     inline auto xfunctor_view<F, CT>::storage_cbegin() const noexcept -> const_storage_iterator
     {
-        return const_storage_iterator(m_e.template storage_cbegin<L>(), &m_functor);
+        return const_storage_iterator(m_e.storage_cbegin(), &m_functor);
     }
 
     template <class F, class CT>
-    template <layout_type L>
     inline auto xfunctor_view<F, CT>::storage_cend() const noexcept -> const_storage_iterator
     {
-        return const_storage_iterator(m_e.template storage_cend<L>(), &m_functor);
+        return const_storage_iterator(m_e.storage_cend(), &m_functor);
     }
 
     template <class F, class CT>
-    template <layout_type L>
     inline auto xfunctor_view<F, CT>::storage_rbegin() noexcept -> reverse_storage_iterator
     {
-        return reverse_storage_iterator(m_e.template storage_rbegin<L>(), &m_functor);
+        return reverse_storage_iterator(m_e.storage_rbegin(), &m_functor);
     }
 
     template <class F, class CT>
-    template <layout_type L>
     inline auto xfunctor_view<F, CT>::storage_rend() noexcept -> reverse_storage_iterator
     {
-        return reverse_storage_iterator(m_e.template storage_rend<L>(), &m_functor);
+        return reverse_storage_iterator(m_e.storage_rend(), &m_functor);
     }
 
     template <class F, class CT>
-    template <layout_type L>
     inline auto xfunctor_view<F, CT>::storage_rbegin() const noexcept -> const_reverse_storage_iterator
     {
-        return const_reverse_storage_iterator(m_e.template storage_rbegin<L>(), &m_functor);
+        return const_reverse_storage_iterator(m_e.storage_rbegin(), &m_functor);
     }
 
     template <class F, class CT>
-    template <layout_type L>
     inline auto xfunctor_view<F, CT>::storage_rend() const noexcept -> const_reverse_storage_iterator
     {
-        return const_reverse_storage_iterator(m_e.template storage_rend<L>(), &m_functor);
+        return const_reverse_storage_iterator(m_e.storage_rend(), &m_functor);
     }
 
     template <class F, class CT>
-    template <layout_type L>
     inline auto xfunctor_view<F, CT>::storage_crbegin() const noexcept -> const_reverse_storage_iterator
     {
-        return const_reverse_storage_iterator(m_e.template storage_crbegin<L>(), &m_functor);
+        return const_reverse_storage_iterator(m_e.storage_crbegin(), &m_functor);
     }
 
     template <class F, class CT>
-    template <layout_type L>
     inline auto xfunctor_view<F, CT>::storage_crend() const noexcept -> const_reverse_storage_iterator
     {
-        return const_reverse_storage_iterator(m_e.template storage_crend<L>(), &m_functor);
+        return const_reverse_storage_iterator(m_e.storage_crend(), &m_functor);
     }
 
     /***************

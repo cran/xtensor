@@ -22,6 +22,8 @@
 #include <vector>
 
 #include <xtl/xfunctional.hpp>
+#include <xtl/xsequence.hpp>
+#include <xtl/xmeta_utils.hpp>
 #include <xtl/xtype_traits.hpp>
 
 #include "xtensor_config.hpp"
@@ -68,6 +70,23 @@ namespace xt
     template <class T, std::size_t N>
     bool resize_container(std::array<T, N>& a, typename std::array<T, N>::size_type size);
 
+    template <std::size_t... I>
+    class fixed_shape;
+
+    template <std::size_t... I>
+    bool resize_container(fixed_shape<I...>& a, std::size_t size);
+
+    template <class X, class C>
+    struct rebind_container;
+
+    template <class X, class C>
+    using rebind_container_t = typename rebind_container<X, C>::type;
+
+    std::size_t normalize_axis(std::size_t dim, std::ptrdiff_t axis);
+
+    template <class S1, class S2>
+    inline bool same_shape(const S1& s1, const S2& s2) noexcept;
+
     // gcc 4.9 is affected by C++14 defect CGW 1558
     // see http://open-std.org/JTC1/SC22/WG21/docs/cwg_defects.html#1558
     template <class... T>
@@ -78,6 +97,18 @@ namespace xt
 
     template <class... T>
     using void_t = typename make_void<T...>::type;
+
+    // This is used for non existant types (e.g. storage for some expressions
+    // like generators)
+    struct invalid_type
+    {
+    };
+
+    template <class... T>
+    struct make_invalid_type
+    {
+        using type = invalid_type;
+    };
 
     template <class T, class R>
     using disable_integral_t = std::enable_if_t<!std::is_integral<T>::value, R>;
@@ -133,6 +164,29 @@ namespace xt
         detail::for_each_impl<0, F, T...>(std::forward<F>(f), t);
     }
 
+    namespace detail
+    {
+        template <std::size_t I, class F, class... T>
+        inline typename std::enable_if<I == sizeof...(T), void>::type
+        for_each_impl(F&& /*f*/, const std::tuple<T...>& /*t*/) noexcept(noexcept(std::declval<F>()))
+        {
+        }
+
+        template <std::size_t I, class F, class... T>
+        inline typename std::enable_if<I < sizeof...(T), void>::type
+        for_each_impl(F&& f, const std::tuple<T...>& t) noexcept(noexcept(std::declval<F>()))
+        {
+            f(std::get<I>(t));
+            for_each_impl<I + 1, F, T...>(std::forward<F>(f), t);
+        }
+    }
+
+    template <class F, class... T>
+    inline void for_each(F&& f, const std::tuple<T...>& t) noexcept(noexcept(std::declval<F>()))
+    {
+        detail::for_each_impl<0, F, T...>(std::forward<F>(f), t);
+    }
+
     /*****************************
      * accumulate implementation *
      *****************************/
@@ -158,7 +212,7 @@ namespace xt
     template <class F, class R, class... T>
     inline R accumulate(F&& f, R init, const std::tuple<T...>& t) noexcept(noexcept(std::declval<F>()))
     {
-        return detail::accumulate_impl<0, F, R, T...>(f, init, t);
+        return detail::accumulate_impl<0, F, R, T...>(std::forward<F>(f), init, t);
     }
 
     /***************************
@@ -389,6 +443,100 @@ namespace xt
         return size == N;
     }
 
+    template <std::size_t... I>
+    inline bool resize_container(xt::fixed_shape<I...>&, std::size_t size)
+    {
+        return sizeof...(I) == size;
+    }
+
+    /*********************************
+     * normalize_axis implementation *
+     *********************************/
+
+
+    // scalar normalize axis
+    inline std::size_t normalize_axis(std::size_t dim, std::ptrdiff_t axis)
+    {
+        return axis < 0 ? static_cast<std::size_t>(static_cast<std::ptrdiff_t>(dim) + axis) : static_cast<std::size_t>(axis);
+    }
+
+    template <class E, class C>
+    inline std::enable_if_t<!std::is_integral<std::decay_t<C>>::value &&
+                     std::is_signed<typename std::decay_t<C>::value_type>::value,
+                     rebind_container_t<std::size_t, std::decay_t<C>>>
+    normalize_axis(E& expr, C&& axes)
+    {
+        rebind_container_t<std::size_t, std::decay_t<C>> res;
+        resize_container(res, axes.size());
+
+        for (std::size_t i = 0; i < axes.size(); ++i)
+        {
+            res[i] = normalize_axis(expr.dimension(), axes[i]);
+        }
+
+        XTENSOR_ASSERT(std::all_of(res.begin(), res.end(), [&expr](auto ax_el) { return ax_el < expr.dimension(); }));
+
+        return res;
+    }
+
+    template <class C, class E>
+    inline std::enable_if_t<!std::is_integral<std::decay_t<C>>::value && std::is_unsigned<typename std::decay_t<C>::value_type>::value, C&&>
+    normalize_axis(E& expr, C&& axes)
+    {
+        static_cast<void>(expr);
+        XTENSOR_ASSERT(std::all_of(axes.begin(), axes.end(), [&expr](auto ax_el) { return ax_el < expr.dimension(); }));
+        return std::forward<C>(axes);
+    }
+
+    template <class R, class E, class C>
+    inline auto forward_normalize(E& expr, C&& axes)
+        -> std::enable_if_t<std::is_signed<std::decay_t<decltype(*std::begin(axes))>>::value, R>
+    {
+        R res;
+        xt::resize_container(res, xtl::sequence_size(axes));
+        auto dim = expr.dimension();
+        std::transform(std::begin(axes), std::end(axes), std::begin(res), [&dim](auto ax_el) {
+            return normalize_axis(dim, ax_el);
+        });
+
+        XTENSOR_ASSERT(std::all_of(res.begin(), res.end(), [&expr](auto ax_el) { return ax_el < expr.dimension(); }));
+
+        return res;
+    }
+
+    template <class R, class E, class C>
+    inline auto forward_normalize(E& expr, C&& axes)
+        -> std::enable_if_t<!std::is_signed<std::decay_t<decltype(*std::begin(axes))>>::value && !std::is_same<R, std::decay_t<C>>::value, R>
+    {
+        static_cast<void>(expr);
+
+        R res;
+        xt::resize_container(res, xtl::sequence_size(axes));
+        std::copy(std::begin(axes), std::end(axes), std::begin(res));
+        XTENSOR_ASSERT(std::all_of(res.begin(), res.end(), [&expr](auto ax_el) { return ax_el < expr.dimension(); }));
+        return res;
+    }
+
+    template <class R, class E, class C>
+    inline auto forward_normalize(E& expr, C&& axes)
+        -> std::enable_if_t<!std::is_signed<std::decay_t<decltype(*std::begin(axes))>>::value && std::is_same<R, std::decay_t<C>>::value, R&&>
+    {
+        static_cast<void>(expr);
+        XTENSOR_ASSERT(std::all_of(std::begin(axes), std::end(axes), [&expr](auto ax_el) { return ax_el < expr.dimension(); }));
+        return std::move(axes);
+    }
+
+    /*****************************
+     * same_shape implementation *
+     *****************************/
+
+    template <class S1, class S2>
+    inline bool same_shape(const S1& s1, const S2& s2) noexcept
+    {
+        return s1.size() == s2.size() && std::equal(s1.begin(), s1.end(), s2.begin());
+    }
+
+
     /******************
      * get_value_type *
      ******************/
@@ -511,24 +659,30 @@ namespace xt
         return N;
     }
 
-    /*****************************************
+    /*************************************
      * has_data_interface implementation *
-     *****************************************/
+     *************************************/
 
-    template <class T>
-    class has_data_interface
+    template <class E, class = void>
+    struct has_data_interface : std::false_type
     {
-        // the test function has one argument -- the return type of the function we're searching if it exists
-        template <class C>
-        static std::true_type test(decltype(std::declval<C>().data()));
+    };
 
-        template <class C>
-        static std::false_type test(...);
+    template <class E>
+    struct has_data_interface<E, void_t<decltype(std::declval<E>().data())>>
+        : std::true_type
+    {
+    };
 
-    public:
+    template <class E, class = void>
+    struct has_strides : std::false_type
+    {
+    };
 
-        // we try to call the test function with the return type and report the result
-        constexpr static bool value = decltype(test<T>(std::declval<const std::add_pointer_t<typename T::value_type>>()))::value == true;
+    template <class E>
+    struct has_strides<E, void_t<decltype(std::declval<E>().strides())>>
+        : std::true_type
+    {
     };
 
     /******************
@@ -591,7 +745,7 @@ namespace xt
     inline auto conditional_cast(U&& u)
     {
         return conditional_cast_functor<condition, T>()(std::forward<U>(u));
-    };
+    }
 
     /************************************
      * arithmetic type promotion traits *
@@ -647,12 +801,11 @@ namespace xt
         using type = typename promote_type<bool, typename promote_type<REST...>::type>::type;
     };
 
-    /** 
+    /**
      * @brief Abbreviation of 'typename promote_type<T>::type'.
      */
     template <class... T>
     using promote_type_t = typename promote_type<T...>::type;
-
     /**
      * @brief Traits class to find the biggest type of the same kind.
      *
@@ -664,7 +817,7 @@ namespace xt
     struct big_promote_type
     {
     private:
-        
+
         using V = std::decay_t<T>;
         static constexpr bool is_arithmetic = std::is_arithmetic<V>::value;
         static constexpr bool is_signed = std::is_signed<V>::value;
@@ -918,7 +1071,7 @@ namespace xt
         {
             static bool enabled;
             return enabled;
-        };
+        }
 
         inline void enable()
         {
@@ -990,6 +1143,57 @@ namespace xt
     {
       return !(a == b);
     }
+
+    template <class E1, class E2, class = void>
+    struct has_assign_to : std::false_type
+    {
+    };
+
+    template <class E1, class E2>
+    struct has_assign_to<E1, E2, void_t<decltype(std::declval<const E2&>().assign_to(std::declval<E1&>()))>>
+        : std::true_type
+    {
+    };
+
+    template <class X, template <class, class> class C, class T, class A>
+    struct rebind_container<X, C<T, A>>
+    {
+        using allocator = typename A::template rebind<X>::other;
+        using type = C<X, allocator>;
+    };
+
+#if defined(__GNUC__) && __GNUC__ > 6 && !defined(__clang__) && __cplusplus >= 201703L
+    template <class X, class T, std::size_t N>
+    struct rebind_container<X, std::array<T, N>>
+    {
+        using type = std::array<X, N>;
+    };
+#else
+    template <class X, template <class, std::size_t> class C, class T, std::size_t N>
+    struct rebind_container<X, C<T, N>>
+    {
+        using type = C<X, N>;
+    };
+#endif
+
+
+    template <class S>
+    struct get_strides_type
+    {
+        using type = typename rebind_container<std::ptrdiff_t, S>::type;
+    };
+
+    template <std::size_t... I>
+    struct get_strides_type<fixed_shape<I...>>
+    {
+        // TODO we could compute the strides statically here.
+        //      But we'll need full constexpr support to have a
+        //      homogenous ``compute_strides`` method
+        using type = std::array<std::ptrdiff_t, sizeof...(I)>;
+    };
+
+    template <class C>
+    using get_strides_t = typename get_strides_type<C>::type;
 }
 
 #endif

@@ -17,6 +17,7 @@
 #include <vector>
 
 #include <xtl/xiterator_base.hpp>
+#include <xtl/xmeta_utils.hpp>
 #include <xtl/xsequence.hpp>
 
 #include "xexception.hpp"
@@ -64,6 +65,10 @@ namespace xt
     template <class C>
     using get_stepper_iterator = typename detail::get_stepper_iterator_impl<C>::type;
 
+    /********************************
+     * xindex_type_t implementation *
+     ********************************/
+
     namespace detail
     {
         template <class ST>
@@ -76,6 +81,12 @@ namespace xt
         struct index_type_impl<std::array<V, L>>
         {
             using type = std::array<V, L>;
+        };
+
+        template <std::size_t... I>
+        struct index_type_impl<fixed_shape<I...>>
+        {
+            using type = std::array<std::size_t, sizeof...(I)>;
         };
     }
 
@@ -100,6 +111,7 @@ namespace xt
         using difference_type = typename subiterator_traits::difference_type;
         using size_type = typename storage_type::size_type;
         using shape_type = typename storage_type::shape_type;
+        using simd_type = xsimd::simd_type<value_type>;
 
         xstepper() = default;
         xstepper(storage_type* c, subiterator_type it, size_type offset) noexcept;
@@ -113,6 +125,14 @@ namespace xt
 
         void to_begin();
         void to_end(layout_type l);
+
+        template <class R>
+        R step_simd();
+
+        value_type step_leading();
+
+        template <class R>
+        void store_simd(const R& vec);
 
     private:
 
@@ -194,6 +214,18 @@ namespace xt
         xexpression_type* p_e;
         index_type m_index;
         size_type m_offset;
+    };
+
+    template <class T>
+    struct is_indexed_stepper
+    {
+        static const bool value = false;
+    };
+
+    template <class T, bool B>
+    struct is_indexed_stepper<xindexed_stepper<T, B>>
+    {
+        static const bool value = true;
     };
 
     /*************
@@ -352,34 +384,69 @@ namespace xt
     bool operator<(const xbounded_iterator<It, BIt>& lhs,
                    const xbounded_iterator<It, BIt>& rhs);
 
-    /*******************************
-    * trivial_begin / trivial_end *
-    *******************************/
+    /*****************************
+     * linear_begin / linear_end *
+     *****************************/
 
     namespace detail
     {
-        template <class C>
-        constexpr auto trivial_begin(C& c) noexcept
+        template <class C, class = void_t<>>
+        struct has_storage_iterator : std::false_type
         {
-            return c.storage_begin();
+        };
+
+        template <class C>
+        struct has_storage_iterator<C, void_t<decltype(std::declval<C>().storage_cbegin())>>
+            : std::true_type
+        {
+        };
+
+        template <class C>
+        XTENSOR_CONSTEXPR_RETURN auto linear_begin(C& c) noexcept
+        {
+            return xtl::mpl::static_if<has_storage_iterator<C>::value>([&](auto self)
+            {
+                return self(c).storage_begin();
+            }, /*else*/ [&](auto self)
+            {
+                return self(c).begin();
+            });
         }
 
         template <class C>
-        constexpr auto trivial_end(C& c) noexcept
+        XTENSOR_CONSTEXPR_RETURN auto linear_end(C& c) noexcept
         {
-            return c.storage_end();
+            return xtl::mpl::static_if<has_storage_iterator<C>::value>([&](auto self)
+            {
+                return self(c).storage_end();
+            }, /*else*/ [&](auto self)
+            {
+                return self(c).end();
+            });
         }
 
         template <class C>
-        constexpr auto trivial_begin(const C& c) noexcept
+        XTENSOR_CONSTEXPR_RETURN auto linear_begin(const C& c) noexcept
         {
-            return c.storage_begin();
+            return xtl::mpl::static_if<has_storage_iterator<C>::value>([&](auto self)
+            {
+                return self(c).storage_cbegin();
+            }, /*else*/ [&](auto self)
+            {
+                return self(c).cbegin();
+            });
         }
 
         template <class C>
-        constexpr auto trivial_end(const C& c) noexcept
+        XTENSOR_CONSTEXPR_RETURN auto linear_end(const C& c) noexcept
         {
-            return c.storage_end();
+            return xtl::mpl::static_if<has_storage_iterator<C>::value>([&](auto self)
+            {
+                return self(c).storage_cend();
+            }, /*else*/ [&](auto self)
+            {
+                return self(c).cend();
+            });
         }
     }
 
@@ -447,6 +514,31 @@ namespace xt
     inline void xstepper<C>::to_end(layout_type l)
     {
         m_it = p_c->data_xend(l);
+    }
+
+    template <class C>
+    template <class R>
+    inline R xstepper<C>::step_simd()
+    {
+        R reg;
+        reg.load_unaligned(&(*m_it));
+        m_it += xsimd::revert_simd_traits<R>::size;
+        return reg;
+    }
+
+    template <class C>
+    template <class R>
+    inline void xstepper<C>::store_simd(const R& vec)
+    {
+        vec.store_unaligned(&(*m_it));
+        m_it += xsimd::revert_simd_traits<R>::size;;
+    }
+
+    template <class C>
+    auto xstepper<C>::step_leading() -> value_type
+    {
+        ++m_it;
+        return *m_it;
     }
 
     template <>

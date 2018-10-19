@@ -96,12 +96,14 @@ namespace xt
         using stepper = typename iterable_base::stepper;
         using const_stepper = typename iterable_base::const_stepper;
 
-        static constexpr layout_type static_layout = xexpression_type::static_layout;
-        //static constexpr bool contiguous_layout = xexpression_type::contiguous_layout;
+        static constexpr layout_type static_layout = layout_type::dynamic;
         static constexpr bool contiguous_layout = false;
 
         template <class CTA, class S>
-        xbroadcast(CTA&& e, S&& s);
+        xbroadcast(CTA&& e, const S& s);
+
+        template <class CTA>
+        xbroadcast(CTA&& e, shape_type&& s);
 
         size_type size() const noexcept;
         size_type dimension() const noexcept;
@@ -114,6 +116,9 @@ namespace xt
         template <class... Args>
         const_reference at(Args... args) const;
 
+        template <class... Args>
+        const_reference unchecked(Args... args) const;
+
         template <class S>
         disable_integral_t<S, const_reference> operator[](const S& index) const;
         template <class I>
@@ -121,13 +126,13 @@ namespace xt
         const_reference operator[](size_type i) const;
 
         template <class It>
-        const_reference element(It, It last) const;
+        const_reference element(It first, It last) const;
 
         template <class S>
         bool broadcast_shape(S& shape, bool reuse_cache = false) const;
 
         template <class S>
-        bool is_trivial_broadcast(const S& strides) const noexcept;
+        bool has_linear_assign(const S& strides) const noexcept;
 
         template <class S>
         const_stepper stepper_begin(const S& shape) const noexcept;
@@ -161,8 +166,7 @@ namespace xt
     inline auto broadcast(E&& e, const S& s)
     {
         using broadcast_type = xbroadcast<const_xclosure_t<E>, S>;
-        using shape_type = typename broadcast_type::shape_type;
-        return broadcast_type(std::forward<E>(e), xtl::forward_sequence<shape_type>(s));
+        return broadcast_type(std::forward<E>(e), s);
     }
 
 #ifdef X_OLD_CLANG
@@ -200,8 +204,29 @@ namespace xt
      */
     template <class CT, class X>
     template <class CTA, class S>
-    inline xbroadcast<CT, X>::xbroadcast(CTA&& e, S&& s)
-        : m_e(std::forward<CTA>(e)), m_shape(std::forward<S>(s))
+    inline xbroadcast<CT, X>::xbroadcast(CTA&& e, const S& s)
+        : m_e(std::forward<CTA>(e))
+    {
+        if (s.size() < m_e.dimension())
+        {
+            throw xt::broadcast_error("Broadcast shape has fewer elements than original expression.");
+        }
+        xt::resize_container(m_shape, s.size());
+        std::copy(s.begin(), s.end(), m_shape.begin());
+        xt::broadcast_shape(m_e.shape(), m_shape);
+    }
+
+    /**
+     * Constructs an xbroadcast expression broadcasting the specified
+     * \ref xexpression to the given shape
+     *
+     * @param e the expression to broadcast
+     * @param s the shape to apply
+     */
+    template <class CT, class X>
+    template <class CTA>
+    inline xbroadcast<CT, X>::xbroadcast(CTA&& e, shape_type&& s)
+        : m_e(std::forward<CTA>(e)), m_shape(std::move(s))
     {
         xt::broadcast_shape(m_e.shape(), m_shape);
     }
@@ -260,7 +285,7 @@ namespace xt
     template <class... Args>
     inline auto xbroadcast<CT, X>::operator()(Args... args) const -> const_reference
     {
-        return detail::get_element(m_e, args...);
+        return m_e(args...);
     }
 
     /**
@@ -277,6 +302,32 @@ namespace xt
     inline auto xbroadcast<CT, X>::at(Args... args) const -> const_reference
     {
         check_access(shape(), static_cast<size_type>(args)...);
+        return this->operator()(args...);
+    }
+
+    /**
+     * Returns a constant reference to the element at the specified position in the expression.
+     * @param args a list of indices specifying the position in the expression. Indices
+     * must be unsigned integers, the number of indices must be equal to the number of
+     * dimensions of the expression, else the behavior is undefined.
+     *
+     * @warning This method is meant for performance, for expressions with a dynamic
+     * number of dimensions (i.e. not known at compile time). Since it may have
+     * undefined behavior (see parameters), operator() should be prefered whenever
+     * it is possible.
+     * @warning This method is NOT compatible with broadcasting, meaning the following
+     * code has undefined behavior:
+     * \code{.cpp}
+     * xt::xarray<double> a = {{0, 1}, {2, 3}};
+     * xt::xarray<double> b = {0, 1};
+     * auto fd = a + b;
+     * double res = fd.uncheked(0, 1);
+     * \endcode
+     */
+    template <class CT, class X>
+    template <class... Args>
+    inline auto xbroadcast<CT, X>::unchecked(Args... args) const -> const_reference
+    {
         return this->operator()(args...);
     }
 
@@ -329,6 +380,7 @@ namespace xt
     /**
      * Broadcast the shape of the function to the specified parameter.
      * @param shape the result shape
+     * @param reuse_cache parameter for internal optimization
      * @return a boolean indicating whether the broadcasting is trivial
      */
     template <class CT, class X>
@@ -339,17 +391,17 @@ namespace xt
     }
 
     /**
-     * Compares the specified strides with those of the container to see whether
-     * the broadcasting is trivial.
-     * @return a boolean indicating whether the broadcasting is trivial
+     * Checks whether the xbroadcast can be linearly assigned to an expression
+     * with the specified strides.
+     * @return a boolean indicating whether a linear assign is possible
      */
     template <class CT, class X>
     template <class S>
-    inline bool xbroadcast<CT, X>::is_trivial_broadcast(const S& strides) const noexcept
+    inline bool xbroadcast<CT, X>::has_linear_assign(const S& strides) const noexcept
     {
         return dimension() == m_e.dimension() &&
             std::equal(m_shape.cbegin(), m_shape.cend(), m_e.shape().cbegin()) &&
-            m_e.is_trivial_broadcast(strides);
+            m_e.has_linear_assign(strides);
     }
     //@}
 

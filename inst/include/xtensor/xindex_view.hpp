@@ -80,7 +80,6 @@ namespace xt
         using iterable_base = xiterable<self_type>;
         using inner_shape_type = typename iterable_base::inner_shape_type;
         using shape_type = inner_shape_type;
-        using strides_type = shape_type;
 
         using indices_type = I;
 
@@ -107,9 +106,13 @@ namespace xt
         const inner_shape_type& shape() const noexcept;
         layout_type layout() const noexcept;
 
-        reference operator()();
+        template <class T>
+        void fill(const T& value);
+
+        reference operator()(size_type idx = size_type(0));
         template <class... Args>
-        reference operator()(size_type idx, Args... /*args*/);
+        reference operator()(size_type idx0, size_type idx1, Args... args);
+        reference unchecked(size_type idx);
         template <class S>
         disable_integral_t<S, reference> operator[](const S& index);
         template <class OI>
@@ -119,9 +122,10 @@ namespace xt
         template <class It>
         reference element(It first, It last);
 
-        const_reference operator()() const;
+        const_reference operator()(size_type idx = size_type(0)) const;
         template <class... Args>
-        const_reference operator()(size_type idx, Args... /*args*/) const;
+        const_reference operator()(size_type idx0, size_type idx1, Args... args) const;
+        const_reference unchecked(size_type idx) const;
         template <class S>
         disable_integral_t<S, const_reference> operator[](const S& index) const;
         template <class OI>
@@ -135,7 +139,7 @@ namespace xt
         bool broadcast_shape(O& shape, bool reuse_cache = false) const;
 
         template <class O>
-        bool is_trivial_broadcast(const O& /*strides*/) const noexcept;
+        bool has_linear_assign(const O& /*strides*/) const noexcept;
 
         template <class ST>
         stepper stepper_begin(const ST& shape);
@@ -209,7 +213,7 @@ namespace xt
 
         template <class E>
         disable_xexpression<E, self_type&> operator%=(const E&);
-        
+
     private:
 
         template <class F>
@@ -230,7 +234,7 @@ namespace xt
     /**
      * Constructs an xindex_view, selecting the indices specified by \a indices.
      * The resulting xexpression has a 1D shape with a length of n for n indices.
-     * 
+     *
      * @param e the underlying xexpression for this view
      * @param indices the indices to select
      */
@@ -313,37 +317,81 @@ namespace xt
     /**
      * @name Data
      */
-    template <class CT, class I>
-    inline auto xindex_view<CT, I>::operator()() -> reference
-    {
-        return m_e();
-    }
+    //@{
 
+    /**
+     * Fills the view with the given value.
+     * @param value the value to fill the view with.
+     */
     template <class CT, class I>
-    inline auto xindex_view<CT, I>::operator()() const -> const_reference
+    template <class T>
+    inline void xindex_view<CT, I>::fill(const T& value)
     {
-        return m_e();
-    }
-
-    template <class CT, class I>
-    template <class... Args>
-    inline auto xindex_view<CT, I>::operator()(size_type idx, Args... /*args*/) -> reference
-    {
-        return m_e[m_indices[idx]];
+        std::fill(this->begin(), this->end(), value);
     }
 
     /**
-     * Returns the element at the specified position in the xindex_view. 
-     * 
-     * @param idx the position in the view
+     * Returns a reference to the element at the specified position in the xindex_view.
+     * @param idx index specifying the position in the index_view. More indices may be provided,
+     * only the last one will be used.
      */
     template <class CT, class I>
-    template <class... Args>
-    inline auto xindex_view<CT, I>::operator()(size_type idx, Args... /*args*/) const -> const_reference
+    inline auto xindex_view<CT, I>::operator()(size_type idx) -> reference
     {
         return m_e[m_indices[idx]];
     }
 
+    template <class CT, class I>
+    template <class... Args>
+    inline auto xindex_view<CT, I>::operator()(size_type, size_type idx1, Args... args) -> reference
+    {
+        return this->operator()(idx1, static_cast<size_type>(args)...);
+    }
+
+    /**
+     * Returns a reference to the element at the specified position in the xindex_view.
+     * @param idx index specifying the position in the index_view.
+     */
+    template <class CT, class I>
+    inline auto xindex_view<CT, I>::unchecked(size_type idx) -> reference
+    {
+        return this->operator()(idx);
+    }
+
+    /**
+     * Returns a constant reference to the element at the specified position in the xindex_view.
+     * @param idx index specifying the position in the index_view. More indices may be provided,
+     * only the last one will be used.
+     */
+    template <class CT, class I>
+    inline auto xindex_view<CT, I>::operator()(size_type idx) const -> const_reference
+    {
+        return m_e[m_indices[idx]];
+    }
+
+    template <class CT, class I>
+    template <class... Args>
+    inline auto xindex_view<CT, I>::operator()(size_type, size_type idx1, Args... args) const -> const_reference
+    {
+        return this->operator()(idx1, args...);
+    }
+
+    /**
+     * Returns a constant reference to the element at the specified position in the xindex_view.
+     * @param idx index specifying the position in the index_view.
+     */
+    template <class CT, class I>
+    inline auto xindex_view<CT, I>::unchecked(size_type idx) const -> const_reference
+    {
+        return this->operator()(idx);
+    }
+
+    /**
+     * Returns a reference to the element at the specified position in the container.
+     * @param index a sequence of indices specifying the position in the container. Indices
+     * must be unsigned integers, the number of indices in the list should be equal or greater
+     * than the number of dimensions of the container.
+     */
     template <class CT, class I>
     template <class S>
     inline auto xindex_view<CT, I>::operator[](const S& index)
@@ -366,6 +414,12 @@ namespace xt
         return operator()(i);
     }
 
+    /**
+     * Returns a constant reference to the element at the specified position in the container.
+     * @param index a sequence of indices specifying the position in the container. Indices
+     * must be unsigned integers, the number of indices in the list should be equal or greater
+     * than the number of dimensions of the container.
+     */
     template <class CT, class I>
     template <class S>
     inline auto xindex_view<CT, I>::operator[](const S& index) const
@@ -400,6 +454,11 @@ namespace xt
         return m_e[m_indices[(*first)]];
     }
 
+    /**
+     * Returns a reference to the element at the specified position in the xindex_view.
+     * @param first iterator starting the sequence of indices
+     * The number of indices in the sequence should be equal to or greater 1.
+     */
     template <class CT, class I>
     template <class It>
     inline auto xindex_view<CT, I>::element(It first, It /*last*/) const -> const_reference
@@ -415,6 +474,7 @@ namespace xt
     /**
      * Broadcast the shape of the xindex_view to the specified parameter.
      * @param shape the result shape
+     * @param reuse_cache parameter for internal optimization
      * @return a boolean indicating whether the broadcasting is trivial
      */
     template <class CT, class I>
@@ -425,13 +485,13 @@ namespace xt
     }
 
     /**
-     * Compares the specified strides with those of the container to see whether
-     * the broadcasting is trivial.
-     * @return a boolean indicating whether the broadcasting is trivial
+     * Checks whether the xindex_view can be linearly assigned to an expression
+     * with the specified strides.
+     * @return a boolean indicating whether a linear assign is possible
      */
     template <class CT, class I>
     template <class O>
-    inline bool xindex_view<CT, I>::is_trivial_broadcast(const O& /*strides*/) const noexcept
+    inline bool xindex_view<CT, I>::has_linear_assign(const O& /*strides*/) const noexcept
     {
         return false;
     }
@@ -483,7 +543,7 @@ namespace xt
     //@{
     /**
      * Constructs a xfiltration on the given expression \c e, selecting
-     * the elements matching the specified \c condition. 
+     * the elements matching the specified \c condition.
      *
      * @param e the \ref xexpression to filter.
      * @param condition the filtering \ref xexpression to apply.
@@ -526,7 +586,7 @@ namespace xt
     template <class E>
     inline auto xfiltration<ECT, CCT>::operator+=(const E& e) -> disable_xexpression<E, self_type&>
     {
-        return apply([this, &e](const_reference v, bool cond) { return cond ? v + e : v; });
+        return apply([&e](const_reference v, bool cond) { return cond ? v + e : v; });
     }
 
     /**
@@ -538,7 +598,7 @@ namespace xt
     template <class E>
     inline auto xfiltration<ECT, CCT>::operator-=(const E& e) -> disable_xexpression<E, self_type&>
     {
-        return apply([this, &e](const_reference v, bool cond) { return cond ? v - e : v; });
+        return apply([&e](const_reference v, bool cond) { return cond ? v - e : v; });
     }
 
     /**
@@ -550,7 +610,7 @@ namespace xt
     template <class E>
     inline auto xfiltration<ECT, CCT>::operator*=(const E& e) -> disable_xexpression<E, self_type&>
     {
-        return apply([this, &e](const_reference v, bool cond) { return cond ? v * e : v; });
+        return apply([&e](const_reference v, bool cond) { return cond ? v * e : v; });
     }
 
     /**
@@ -562,7 +622,7 @@ namespace xt
     template <class E>
     inline auto xfiltration<ECT, CCT>::operator/=(const E& e) -> disable_xexpression<E, self_type&>
     {
-        return apply([this, &e](const_reference v, bool cond) { return cond ? v / e : v; });
+        return apply([&e](const_reference v, bool cond) { return cond ? v / e : v; });
     }
 
     /**
@@ -574,7 +634,7 @@ namespace xt
     template <class E>
     inline auto xfiltration<ECT, CCT>::operator%=(const E& e) -> disable_xexpression<E, self_type&>
     {
-        return apply([this, &e](const_reference v, bool cond) { return cond ? v % e : v; });
+        return apply([&e](const_reference v, bool cond) { return cond ? v % e : v; });
     }
 
     template <class ECT, class CCT>
@@ -587,12 +647,12 @@ namespace xt
 
     /**
      * @brief creates an indexview from a container of indices.
-     *        
+     *
      * Returns a 1D view with the elements at \a indices selected.
      *
      * @param e the underlying xexpression
      * @param indices the indices to select
-     * 
+     *
      * \code{.cpp}
      * xarray<double> a = {{1,5,3}, {4,5,6}};
      * b = index_view(a, {{0, 0}, {1, 0}, {1, 1}});
@@ -630,9 +690,9 @@ namespace xt
 
     /**
      * @brief creates a view into \a e filtered by \a condition.
-     *        
+     *
      * Returns a 1D view with the elements selected where \a condition evaluates to \em true.
-     * This is equivalent to \verbatim{index_view(e, where(condition));}\endverbatim
+     * This is equivalent to \verbatim{index_view(e, argwhere(condition));}\endverbatim
      * The returned view is not optimal if you just want to assign a scalar to the filtered
      * elements. In that case, you should consider using the \ref filtration function
      * instead.
@@ -651,7 +711,7 @@ namespace xt
     template <class E, class O>
     inline auto filter(E&& e, O&& condition) noexcept
     {
-        auto indices = where(std::forward<O>(condition));
+        auto indices = argwhere(std::forward<O>(condition));
         using view_type = xindex_view<xclosure_t<E>, decltype(indices)>;
         return view_type(std::forward<E>(e), std::move(indices));
     }

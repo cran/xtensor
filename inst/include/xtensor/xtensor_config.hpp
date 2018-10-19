@@ -10,8 +10,8 @@
 #define XTENSOR_CONFIG_HPP
 
 #define XTENSOR_VERSION_MAJOR 0
-#define XTENSOR_VERSION_MINOR 16
-#define XTENSOR_VERSION_PATCH 2
+#define XTENSOR_VERSION_MINOR 18
+#define XTENSOR_VERSION_PATCH 1
 
 // DETECT 3.6 <= clang < 3.8 for compiler bug workaround.
 #ifdef __clang__
@@ -22,13 +22,28 @@
     #endif
 #endif
 
-#ifndef XTENSOR_DATA_SHAPE_CONTAINER
-#define XTENSOR_DATA_SHAPE_CONTAINER(T, A) uvector<T, A>
+// Workaround for some missing constexpr functionality in MSVC 2015 and MSVC 2017 x86
+#if defined(_MSC_VER)
+    #define XTENSOR_CONSTEXPR_ENHANCED const
+    // The following must not be defined to const, otherwise
+    // it prevents generation of copy operators of classes
+    // containing XTENSOR_CONSTEXPR_ENHANCED_STATIC members
+    #define XTENSOR_CONSTEXPR_ENHANCED_STATIC
+    #define XTENSOR_CONSTEXPR_RETURN inline
+#else
+    #define XTENSOR_CONSTEXPR_ENHANCED constexpr
+    #define XTENSOR_CONSTEXPR_RETURN constexpr
+    #define XTENSOR_CONSTEXPR_ENHANCED_STATIC constexpr static
+    #define XTENSOR_HAS_CONSTEXPR_ENHANCED
+#endif
+
+#ifndef XTENSOR_DEFAULT_DATA_CONTAINER
+#define XTENSOR_DEFAULT_DATA_CONTAINER(T, A) uvector<T, A>
 #endif
 
 #ifndef XTENSOR_DEFAULT_SHAPE_CONTAINER
 #define XTENSOR_DEFAULT_SHAPE_CONTAINER(T, EA, SA) \
-    xt::svector<typename XTENSOR_DATA_SHAPE_CONTAINER(T, EA)::size_type, 4, SA>
+    xt::svector<typename XTENSOR_DEFAULT_DATA_CONTAINER(T, EA)::size_type, 4, SA>
 #endif
 
 #ifndef XTENSOR_DEFAULT_ALLOCATOR

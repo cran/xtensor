@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "xstorage.hpp"
+#include "xutils.hpp"
 
 #ifdef XTENSOR_USE_XSIMD
 
@@ -56,14 +57,14 @@ namespace xsimd
         using type = T;
         using bool_type = bool;
         using batch_bool = bool;
-        static constexpr size_t size = 1;
+        static constexpr std::size_t size = 1;
     };
 
     template <class T>
     struct revert_simd_traits
     {
         using type = T;
-        static constexpr size_t size = simd_traits<type>::size;
+        static constexpr std::size_t size = simd_traits<type>::size;
     };
 
     template <class T>
@@ -75,19 +76,19 @@ namespace xsimd
     template <class T>
     using revert_simd_type = typename revert_simd_traits<T>::type;
 
-    template <class T>
+    template <class T, class V>
     inline simd_type<T> set_simd(const T& value)
     {
         return value;
     }
 
-    template <class T>
+    template <class T, class V>
     inline simd_type<T> load_simd(const T* src, aligned_mode)
     {
         return *src;
     }
 
-    template <class T>
+    template <class T, class V>
     inline simd_type<T> load_simd(const T* src, unaligned_mode)
     {
         return *src;
@@ -119,6 +120,16 @@ namespace xsimd
 
     template <class T1, class T2>
     using simd_return_type = simd_type<T2>;
+
+    template <class V>
+    struct is_batch_bool : std::false_type
+    {
+    };
+
+    template <class V>
+    struct is_batch_complex : std::false_type
+    {
+    };
 }
 
 #endif  // XTENSOR_USE_XSIMD
@@ -155,6 +166,23 @@ namespace xt
 
     template <class A1, class A2>
     using driven_align_mode_t = typename detail::driven_align_mode_impl<A1, A2>::type;
+
+    template <class E, class = void>
+    struct test_simd_interface_impl : std::false_type
+    {
+    };
+
+    template <class E>
+    struct test_simd_interface_impl<E, void_t<decltype(std::declval<E>().template load_simd<aligned_mode>(typename E::size_type(0)))>>
+        : std::true_type
+    {
+    };
+
+    template <class E>
+    struct has_simd_interface
+        : test_simd_interface_impl<E>
+    {
+    };
 }
 
 #endif

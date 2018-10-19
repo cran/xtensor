@@ -54,6 +54,7 @@ endif()
 add_library(xtl INTERFACE IMPORTED)
 
 set_target_properties(xtl PROPERTIES
+  INTERFACE_COMPILE_FEATURES "cxx_std_14"
   INTERFACE_INCLUDE_DIRECTORIES "${_IMPORT_PREFIX}/include"
 )
 
