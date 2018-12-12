@@ -23,7 +23,6 @@
 
 #ifndef XTENSOR_ALIGNMENT
     #ifdef XTENSOR_USE_XSIMD
-        #include <xsimd/xsimd.hpp>
         #define XTENSOR_ALIGNMENT XSIMD_DEFAULT_ALIGNMENT
     #else
         #define XTENSOR_ALIGNMENT 0
@@ -1705,7 +1704,7 @@ namespace std
 
     template <class T, std::ptrdiff_t Start, std::ptrdiff_t End>
     class tuple_size<xt::sequence_view<T, Start, End>> :
-        public integral_constant<std::size_t, End - Start>
+        public integral_constant<std::size_t, std::size_t(End - Start)>
     {
     };
 

@@ -26,6 +26,21 @@ namespace xt
      * xtensor declaration *
      ***********************/
 
+    namespace extension
+    {
+        template <class EC, std::size_t N, layout_type L, class Tag>
+        struct xtensor_container_base;
+
+        template <class EC, std::size_t N, layout_type L>
+        struct xtensor_container_base<EC, N, L, xtensor_expression_tag>
+        {
+            using type = xtensor_empty_base;
+        };
+
+        template <class EC, std::size_t N, layout_type L, class Tag>
+        using xtensor_container_base_t = typename xtensor_container_base<EC, N, L, Tag>::type;
+    }
+
     template <class EC, std::size_t N, layout_type L, class Tag>
     struct xcontainer_inner_types<xtensor_container<EC, N, L, Tag>>
     {
@@ -62,13 +77,15 @@ namespace xt
      */
     template <class EC, std::size_t N, layout_type L, class Tag>
     class xtensor_container : public xstrided_container<xtensor_container<EC, N, L, Tag>>,
-                              public xcontainer_semantic<xtensor_container<EC, N, L, Tag>>
+                              public xcontainer_semantic<xtensor_container<EC, N, L, Tag>>,
+                              public extension::xtensor_container_base_t<EC, N, L, Tag>
     {
     public:
 
         using self_type = xtensor_container<EC, N, L, Tag>;
         using base_type = xstrided_container<self_type>;
         using semantic_base = xcontainer_semantic<self_type>;
+        using extension_base = extension::xtensor_container_base_t<EC, N, L, Tag>;
         using storage_type = typename base_type::storage_type;
         using allocator_type = typename base_type::allocator_type;
         using value_type = typename base_type::value_type;
@@ -313,9 +330,9 @@ namespace xt
     template <class EC, std::size_t N, layout_type L, class Tag>
     template <class SC>
     inline xtensor_container<EC, N, L, Tag>::xtensor_container(xarray_container<EC, L, SC, Tag>&& rhs)
-        : base_type(xtl::forward_sequence<inner_shape_type>(rhs.shape()),
-                    xtl::forward_sequence<inner_strides_type>(rhs.strides()),
-                    xtl::forward_sequence<inner_backstrides_type>(rhs.backstrides()),
+        : base_type(xtl::forward_sequence<inner_shape_type, decltype(rhs.shape())>(rhs.shape()),
+                    xtl::forward_sequence<inner_strides_type, decltype(rhs.strides())>(rhs.strides()),
+                    xtl::forward_sequence<inner_backstrides_type, decltype(rhs.backstrides())>(rhs.backstrides()),
                     std::move(rhs.layout())),
           m_storage(std::move(rhs.storage()))
     {
@@ -340,7 +357,7 @@ namespace xt
     inline xtensor_container<EC, N, L, Tag> xtensor_container<EC, N, L, Tag>::from_shape(S&& s)
     {
         XTENSOR_ASSERT_MSG(s.size() == N, "Cannot change dimension of xtensor.");
-        shape_type shape = xtl::forward_sequence<shape_type>(s);
+        shape_type shape = xtl::forward_sequence<shape_type, S>(s);
         return self_type(shape);
     }
     //@}
@@ -501,6 +518,36 @@ namespace xt
     {
         return m_storage;
     }
+
+    /**
+     * Converts `std::vector<index_type>` (returned e.g. from `xt::argwhere`) to `xtensor`.
+     * @param vector of indices
+     * @return `xt::tensor<typename index_type::value_type, 2>` (e.g. `xt::tensor<size_t, 2>`)
+     */
+    template <class T>
+    inline auto from_indices(const std::vector<T> &idx)
+    {
+        using return_type = xtensor<typename T::value_type, 2>;
+        using size_type = typename return_type::size_type;
+
+        if (idx.size() == 0)
+        {
+            return_type out = empty<typename T::value_type>({size_type(0), size_type(0)});
+            return out;
+        }
+
+        return_type out = empty<typename T::value_type>({idx.size(), idx[0].size()});
+
+        for (size_type i = 0; i < out.shape()[0]; ++i)
+        {
+            for (size_type j = 0; j < out.shape()[1]; ++j)
+            {
+                out(i, j) = idx[i][j];
+            }
+        }
+
+        return out;
+    };
 }
 
 #endif

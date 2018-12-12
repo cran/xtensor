@@ -15,6 +15,16 @@
 
 namespace xt
 {
+    namespace check_policy
+    {
+        struct none
+        {
+        };
+        struct full
+        {
+        };
+    }
+
     template <class E>
     auto transpose(E&& e) noexcept;
 
@@ -413,7 +423,7 @@ namespace xt
     inline auto squeeze(E&& e, const I(&axis)[N], Tag check_policy = Tag())
     {
         using arr_t = std::array<I, N>;
-        return detail::squeeze_impl(std::forward<E>(e), xtl::forward_sequence<arr_t>(axis), check_policy);
+        return detail::squeeze_impl(std::forward<E>(e), xtl::forward_sequence<arr_t, decltype(axis)>(axis), check_policy);
     }
 #endif
 

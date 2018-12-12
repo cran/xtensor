@@ -111,7 +111,7 @@ namespace xt
     inline xtensor<T, N, L> empty(const std::array<ST, N>& shape)
     {
         using shape_type = typename xtensor<T, N>::shape_type;
-        return xtensor<T, N, L>(xtl::forward_sequence<shape_type>(shape));
+        return xtensor<T, N, L>(xtl::forward_sequence<shape_type, decltype(shape)>(shape));
     }
 
 #ifndef X_OLD_CLANG
@@ -119,7 +119,7 @@ namespace xt
     inline xtensor<T, N, L> empty(const I(&shape)[N])
     {
         using shape_type = typename xtensor<T, N>::shape_type;
-        return xtensor<T, N, L>(xtl::forward_sequence<shape_type>(shape));
+        return xtensor<T, N, L>(xtl::forward_sequence<shape_type, decltype(shape)>(shape));
     }
 #endif
 
@@ -136,9 +136,9 @@ namespace xt
      * @param e the xexpression from which to extract shape, value type and layout.
      */
     template <class E>
-    inline typename E::temporary_type empty_like(const xexpression<E>& e)
+    inline auto empty_like(const xexpression<E>& e)
     {
-        using xtype = typename E::temporary_type;
+        using xtype = detail::temporary_type_t<typename E::value_type, typename E::shape_type, E::static_layout>;
         auto res = xtype::from_shape(e.derived_cast().shape());
         return res;
     }
@@ -151,9 +151,9 @@ namespace xt
      * @param fill_value the value used to set each element of the returned xcontainer.
      */
     template <class E>
-    inline typename E::temporary_type full_like(const xexpression<E>& e, typename E::value_type fill_value)
+    inline auto full_like(const xexpression<E>& e, typename E::value_type fill_value)
     {
-        using xtype = typename E::temporary_type;
+        using xtype = detail::temporary_type_t<typename E::value_type, typename E::shape_type, E::static_layout>;
         auto res = xtype::from_shape(e.derived_cast().shape());
         res.fill(fill_value);
         return res;
@@ -169,7 +169,7 @@ namespace xt
      * @param e the xexpression from which to extract shape, value type and layout.
      */
     template <class E>
-    inline typename E::temporary_type zeros_like(const xexpression<E>& e)
+    inline auto zeros_like(const xexpression<E>& e)
     {
         return full_like(e, typename E::value_type(0));
     }
@@ -184,7 +184,7 @@ namespace xt
      * @param e the xexpression from which to extract shape, value type and layout.
      */
     template <class E>
-    inline typename E::temporary_type ones_like(const xexpression<E>& e)
+    inline auto ones_like(const xexpression<E>& e)
     {
         return full_like(e, typename E::value_type(1));
     }
@@ -572,7 +572,8 @@ namespace xt
     inline auto concatenate(std::tuple<CT...>&& t, std::size_t axis = 0)
     {
         using shape_type = promote_shape_t<typename std::decay_t<CT>::shape_type...>;
-        shape_type new_shape = xtl::forward_sequence<shape_type>(std::get<0>(t).shape());
+        using source_shape_type = decltype(std::get<0>(t).shape());
+        shape_type new_shape = xtl::forward_sequence<shape_type, source_shape_type>(std::get<0>(t).shape());
         auto shape_at_axis = [&axis](std::size_t prev, auto& arr) -> std::size_t {
             return prev + arr.shape()[axis];
         };
@@ -623,7 +624,8 @@ namespace xt
     inline auto stack(std::tuple<CT...>&& t, std::size_t axis = 0)
     {
         using shape_type = promote_shape_t<typename std::decay_t<CT>::shape_type...>;
-        auto new_shape = detail::add_axis(xtl::forward_sequence<shape_type>(std::get<0>(t).shape()), axis, sizeof...(CT));
+        using source_shape_type = decltype(std::get<0>(t).shape());
+        auto new_shape = detail::add_axis(xtl::forward_sequence<shape_type, source_shape_type>(std::get<0>(t).shape()), axis, sizeof...(CT));
         return detail::make_xgenerator(detail::stack_impl<CT...>(std::forward<std::tuple<CT...>>(t), axis), new_shape);
     }
 

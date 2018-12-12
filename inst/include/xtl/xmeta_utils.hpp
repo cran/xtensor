@@ -16,6 +16,19 @@
 
 namespace xtl
 {
+    // TODO move to a xutils if we have one
+
+    // gcc 4.9 is affected by C++14 defect CGW 1558
+    // see http://open-std.org/JTC1/SC22/WG21/docs/cwg_defects.html#1558
+    template <class... T>
+    struct make_void
+    {
+        using type = void;
+    };
+
+    template <class... T>
+    using void_t = typename make_void<T...>::type;
+
     namespace mpl
     {
         /*************
@@ -359,44 +372,6 @@ namespace xtl
 
         template <class L>
         using pop_front_t = typename pop_front<L>::type;
-
-        /************
-         * pop_back *
-         ************/
-
-        namespace detail
-        {
-            template <class L>
-            struct pop_back_impl;
-
-            template <template <class...> class L, class T>
-            struct pop_back_impl<L<T>>
-            {
-                using type = L<>;
-            };
-
-            template <template <class...> class L, class T1, class T2>
-            struct pop_back_impl<L<T1, T2>>
-            {
-                using head = T1;
-                using type = L<head>;
-            };
-
-            template <template <class...> class L, class T, class... U>
-            struct pop_back_impl<L<T, U...>>
-            {
-                using head = T;
-                using type = L<head, typename pop_back_impl<L<U...>>::head>;
-            };
-        }
-
-        template <class L>
-        struct pop_back : detail::pop_back_impl<L>
-        {
-        };
-
-        template <class L>
-        using pop_back_t = typename pop_back<L>::type;
 
         /*************
          * transform *

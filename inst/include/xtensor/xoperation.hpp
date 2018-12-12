@@ -25,9 +25,6 @@
 namespace xt
 {
 
-    template <class F, class... CT>
-    class xoptional_function;
-
     /***********
      * helpers *
      ***********/
@@ -50,12 +47,6 @@ namespace xt
 #define UNARY_OPERATOR_FUNCTOR(NAME, OP) UNARY_OPERATOR_FUNCTOR_IMPL(NAME, OP, T)
 #define UNARY_BOOL_OPERATOR_FUNCTOR(NAME, OP) UNARY_OPERATOR_FUNCTOR_IMPL(NAME, OP, bool)
 
-    /* In this macro, T is assumed to be the promote_type of all arguments.
-       Nonetheless, operator() is implemented as a function template,
-       because automatic conversion of the actual argument types to T may
-       cause 'possible loss of data' warnings, e.g. when T is double and an
-       argument is uint64_t.
-    */
 #define BINARY_OPERATOR_FUNCTOR_IMPL(NAME, OP, R)                                \
     struct NAME                                                                  \
     {                                                                            \
@@ -144,12 +135,6 @@ namespace xt
         struct select_xfunction_expression;
 
         template <class F, class... E>
-        struct select_xfunction_expression<xscalar_expression_tag, F, E...>
-        {
-            using type = typename select_xfunction_expression<xtensor_expression_tag, F, E...>::type;
-        };
-
-        template <class F, class... E>
         struct select_xfunction_expression<xtensor_expression_tag, F, E...>
         {
             using type = xfunction<F, E...>;
@@ -158,45 +143,20 @@ namespace xt
         template <class F, class... E>
         struct select_xfunction_expression<xoptional_expression_tag, F, E...>
         {
-            using type = xoptional_function<F, E...>;
+            using type = xfunction<F, E...>;
         };
 
         template <class Tag, class F, class... E>
         using select_xfunction_expression_t = typename select_xfunction_expression<Tag, F, E...>::type;
 
-        template <class Tag, class F, class... E>
-        struct build_functor_type;
-
-        template <class F, class... E>
-        struct build_functor_type<xscalar_expression_tag, F, E...>
-        {
-            using type = typename build_functor_type<xtensor_expression_tag, F, E...>::type;
-        };
-
-        template <class F, class... E>
-        struct build_functor_type<xtensor_expression_tag, F, E...>
-        {
-            using xtype = decltype(std::declval<F>()(std::declval<xvalue_type_t<std::decay_t<E>>>()...));
-            using type = F;
-        };
-
-        template <class F, class... E>
-        struct build_functor_type<xoptional_expression_tag, F, E...>
-        {
-            using type = F;
-        };
-
-        template <class Tag, class F, class... E>
-        using build_functor_type_t = typename build_functor_type<Tag, F, E...>::type;
-
         template <class F, class... E>
         struct xfunction_type
         {
             using expression_tag = xexpression_tag_t<E...>;
-            using functor_type = build_functor_type_t<expression_tag, F, E...>;
+            using functor_type = F;
             using type = select_xfunction_expression_t<expression_tag,
-                functor_type,
-                const_xclosure_t<E>...>;
+                                                       functor_type,
+                                                       const_xclosure_t<E>...>;
         };
 
         template <class F, class... E>
@@ -767,7 +727,9 @@ namespace xt
      * @brief return vector of indices where arr is not zero
      *
      * @param arr input array
-     * @return vector of index_types where arr is not equal to zero
+     * @return vector of index_types where arr is not equal to zero (use `xt::from_indices` to convert)
+     *
+     * @sa xt::from_indices
      */
     template <class T>
     inline auto argwhere(const T& arr)
