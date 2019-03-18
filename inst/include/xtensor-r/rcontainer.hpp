@@ -66,13 +66,24 @@ namespace xt
     {
         inline xbuffer_adaptor<int*> r_shape_to_buffer_adaptor(SEXP exp)
         {
-            if (Rf_isNull(Rf_getAttrib(exp, R_DimSymbol)))
+            SEXP shape_sexp;
+            SEXP dim = Rf_getAttrib(exp, R_DimSymbol);
+
+            if (Rf_isNull(dim))
             {
-                auto d = Rcpp::IntegerVector::create(Rf_length(exp));
-                Rf_setAttrib(exp, R_DimSymbol, d);
+                // This is a 0D scalar
+                if (Rf_xlength(exp) == 1)
+                {
+                    return xbuffer_adaptor<int*>(nullptr, 0);
+                }
+
+                shape_sexp = Rcpp::IntegerVector::create(Rf_length(exp));
+            }
+            else
+            {
+                shape_sexp = dim;
             }
 
-            SEXP shape_sexp = Rf_getAttrib(exp, R_DimSymbol);
             std::size_t n = (std::size_t)Rf_xlength(shape_sexp);
             return xbuffer_adaptor<int*>(
                 Rcpp::internal::r_vector_start<INTSXP>(shape_sexp), n);
@@ -80,13 +91,23 @@ namespace xt
 
         inline xbuffer_adaptor<int*> r_shape_to_buffer_adaptor(SEXP exp, std::size_t n)
         {
-            if (Rf_isNull(Rf_getAttrib(exp, R_DimSymbol)))
+            SEXP shape_sexp;
+            SEXP dim = Rf_getAttrib(exp, R_DimSymbol);
+
+            if (n == 0)
             {
-                auto d = Rcpp::IntegerVector::create(Rf_length(exp));
-                Rf_setAttrib(exp, R_DimSymbol, d);
+                return xbuffer_adaptor<int*>(nullptr, 0);
             }
 
-            SEXP shape_sexp = Rf_getAttrib(exp, R_DimSymbol);
+            if (Rf_isNull(dim))
+            {
+                shape_sexp = Rcpp::IntegerVector::create(Rf_length(exp));
+            }
+            else 
+            {
+                shape_sexp = dim;
+            }
+
             if (n != (std::size_t)Rf_xlength(shape_sexp))
             {
                 throw std::runtime_error("Could not convert shape for rtensor. Dimensions don't match.");
@@ -167,7 +188,7 @@ namespace xt
         static constexpr bool contiguous_layout = true;
 
         template <class S = shape_type>
-        void resize(S&& shape);
+        void resize(S&& shape, bool force = false);
 
         template <class S = shape_type>
         void reshape(S&& shape);
@@ -201,9 +222,10 @@ namespace xt
      */
     template <class D, template <class> class SP>
     template <class S>
-    inline void rcontainer<D, SP>::resize(S&& shape)
+    inline void rcontainer<D, SP>::resize(S&& shape, bool force)
     {
-        if (shape.size() != this->dimension() || !std::equal(std::begin(shape), std::end(shape), this->shape().cbegin()))
+        // if SEXP not initialized, it will be NULL (e.g. in constructor)
+        if (Rf_isNull(*this) || shape.size() != this->dimension() || !std::equal(std::begin(shape), std::end(shape), this->shape().cbegin()) || force)
         {
             derived_type tmp(xtl::forward_sequence<shape_type, S>(shape));
             *static_cast<derived_type*>(this) = std::move(tmp);

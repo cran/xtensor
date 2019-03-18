@@ -50,17 +50,17 @@ namespace xt
 
     /**
      * @class rtensor
-     * @brief Multidimensional container providing the xtensor container semantics wrapping a R array.
+     * @brief Multidimensional container providing the xtensor container semantics wrapping an R array.
      *
      * rtensor is similar to the xtensor container in that it has a static dimensionality.
      *
-     * Unlike with the pyarray container, rtensor cannot be reshaped with a different number of dimensions
-     * and reshapes are not reflected on the Python side. However, rtensor has benefits compared to pyarray
+     * Unlike the rarray container, rtensor cannot be reshaped with a different number of dimensions
+     * and reshapes are not reflected on the R side. However, rtensor has benefits compared to rarray
      * in terms of performances. rtensor shapes are stack-allocated which makes iteration upon rtensor
      * faster than with pyarray.
      *
-     * @tparam T The type of the element stored in the pyarray.
-     * @sa pyarray
+     * @tparam T The type of the element stored in the rarray.
+     * @sa rarray
      */
     template <class T, std::size_t N>
     class rtensor : public rcontainer<rtensor<T, N>>,
@@ -152,7 +152,7 @@ namespace xt
      */
     //@{
     /**
-     * Allocates an uninitialized rtensor that holds 1 element.
+     * Allocates an uninitialized rtensor.
      */
     template <class T, std::size_t N>
     inline rtensor<T, N>::rtensor()
@@ -173,8 +173,19 @@ namespace xt
     template <class S>
     inline void rtensor<T, N>::init_from_shape(const S& shape)
     {
-        auto tmp_shape = Rcpp::IntegerVector(shape.begin(), shape.end());
-        base_type::rstorage::set__(Rf_allocArray(SXP, SEXP(tmp_shape)));
+        if (N != shape.size())
+        {
+            throw std::runtime_error("Wrong dimensions for rtensor.");
+        }
+        if (shape.size() == 0)
+        {
+            base_type::rstorage::set__(Rf_allocVector(SXP, 1));
+        }
+        else
+        {
+            auto tmp_shape = Rcpp::IntegerVector(shape.begin(), shape.end());
+            base_type::rstorage::set__(Rf_allocArray(SXP, SEXP(tmp_shape)));
+        }
         // everything else is handled by update()
     }
 

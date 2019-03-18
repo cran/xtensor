@@ -169,7 +169,6 @@ namespace xt
         template <class S>
         bool has_linear_assign(const S& strides) const noexcept;
         template <class S>
-
         stepper stepper_begin(const S& shape) noexcept;
         template <class S>
         stepper stepper_end(const S& shape, layout_type l) noexcept;
@@ -1049,7 +1048,8 @@ namespace xt
      */
     template <class D>
     template <class S>
-    inline void xstrided_container<D>::reshape(S&& shape, layout_type layout){
+    inline void xstrided_container<D>::reshape(S&& shape, layout_type layout)
+    {
         reshape_impl(std::forward<S>(shape), std::is_signed<std::decay_t<typename std::decay_t<S>::value_type>>(), std::forward<layout_type>(layout));
     }
 
