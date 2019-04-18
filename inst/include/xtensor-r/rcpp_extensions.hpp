@@ -9,7 +9,7 @@
 #ifndef XTENSOR_R_RCPP_EXTENSIONS_HPP
 #define XTENSOR_R_RCPP_EXTENSIONS_HPP
 
-#include <Rcpp.h>
+#include <RcppCommon.h>
 
 namespace xt
 {
@@ -19,8 +19,8 @@ namespace xt
     template <class T, std::size_t N>
     class rtensor;
 
-    template <class T>
-    class roptional_assembly;
+    template <class RC>
+    class rcontainer_optional;
 }
 
 namespace Rcpp
@@ -70,8 +70,8 @@ namespace Rcpp
             SEXP m_sexp;
         };
 
-        template <class T>
-        class Exporter<xt::roptional_assembly<T>>
+        template <class RC>
+        class Exporter<xt::rcontainer_optional<RC>>
         {
         public:
 
@@ -80,9 +80,9 @@ namespace Rcpp
             {
             }
 
-            inline xt::roptional_assembly<T> get()
+            inline xt::rcontainer_optional<RC> get()
             {
-                return xt::roptional_assembly<T>(m_sexp);
+                return xt::rcontainer_optional<RC>(m_sexp);
             }
 
         private:

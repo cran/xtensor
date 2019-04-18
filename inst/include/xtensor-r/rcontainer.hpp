@@ -20,10 +20,9 @@
 
 #include "xtensor_r_config.hpp"
 
-#include <Rcpp.h>
-#include <RcppCommon.h>
-
 #include "rcpp_extensions.hpp"
+
+#include <Rcpp.h>
 
 // Fake type for R logicals
 struct rlogical {};
@@ -35,7 +34,8 @@ namespace Rcpp
 {
     namespace traits
     {
-        template<> struct r_sexptype_traits<rlogical>
+        template<>
+        struct r_sexptype_traits<rlogical>
         {
             static constexpr int rtype = LGLSXP;
         };
@@ -44,6 +44,15 @@ namespace Rcpp
 
 namespace xt
 {
+#if defined(__GNUC__) && !defined(__clang__)
+    namespace workaround
+    {
+        inline void complex_allocator()
+        {
+           std::allocator<std::complex<double>> a;
+        }
+    }
+#endif
 
     // R stores logicals as int32. This ensures that when a logical is seen,
     // the internal xtensor storage type uses an int.
@@ -66,67 +75,36 @@ namespace xt
     {
         inline xbuffer_adaptor<int*> r_shape_to_buffer_adaptor(SEXP exp)
         {
-            SEXP shape_sexp;
             SEXP dim = Rf_getAttrib(exp, R_DimSymbol);
-
-            if (Rf_isNull(dim))
-            {
-                // This is a 0D scalar
-                if (Rf_xlength(exp) == 1)
-                {
-                    return xbuffer_adaptor<int*>(nullptr, 0);
-                }
-
-                shape_sexp = Rcpp::IntegerVector::create(Rf_length(exp));
-            }
-            else
-            {
-                shape_sexp = dim;
-            }
+            SEXP shape_sexp = Rf_isNull(dim) ? SEXP(Rcpp::IntegerVector::create(Rf_length(exp))) : dim;
 
             std::size_t n = (std::size_t)Rf_xlength(shape_sexp);
-            return xbuffer_adaptor<int*>(
-                Rcpp::internal::r_vector_start<INTSXP>(shape_sexp), n);
+            return xbuffer_adaptor<int*>(Rcpp::internal::r_vector_start<INTSXP>(shape_sexp), n);
         }
 
         inline xbuffer_adaptor<int*> r_shape_to_buffer_adaptor(SEXP exp, std::size_t n)
         {
-            SEXP shape_sexp;
             SEXP dim = Rf_getAttrib(exp, R_DimSymbol);
-
-            if (n == 0)
-            {
-                return xbuffer_adaptor<int*>(nullptr, 0);
-            }
-
-            if (Rf_isNull(dim))
-            {
-                shape_sexp = Rcpp::IntegerVector::create(Rf_length(exp));
-            }
-            else 
-            {
-                shape_sexp = dim;
-            }
+            SEXP shape_sexp = Rf_isNull(dim) ? SEXP(Rcpp::IntegerVector::create(Rf_length(exp))) : dim;
 
             if (n != (std::size_t)Rf_xlength(shape_sexp))
             {
                 throw std::runtime_error("Could not convert shape for rtensor. Dimensions don't match.");
             }
-            return xbuffer_adaptor<int*>(
-                Rcpp::internal::r_vector_start<INTSXP>(shape_sexp), n);
+            return xbuffer_adaptor<int*>(Rcpp::internal::r_vector_start<INTSXP>(shape_sexp), n);
         }
 
         template <int SXP>
         inline void check_coercion(SEXP exp)
         {
-        #if XTENSOR_WARN_ON_COERCE
+#if XTENSOR_WARN_ON_COERCE
             if (TYPEOF(exp) != SXP)
             {
                 Rcpp::warning("Coerced object from '%s' to '%s'. Avoid for speed & in-place operations.",
                     Rf_type2char(TYPEOF(exp)),
                     Rf_type2char(SXP));
             }
-        #endif
+#endif
         }
     }
 

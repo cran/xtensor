@@ -629,4 +629,3 @@ namespace xsimd
 }
 
 #endif
-
