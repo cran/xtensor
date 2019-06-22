@@ -93,7 +93,7 @@ namespace xt
 
         template <class V>
         struct has_simd_type
-            : std::integral_constant<bool, !std::is_same<V, xsimd::simd_type<V>>::value>
+            : std::integral_constant<bool, !std::is_same<V, xt_simd::simd_type<V>>::value>
         {
         };
 
@@ -109,7 +109,7 @@ namespace xt
                                                           has_simd_type<xvalue_type_t<std::decay_t<CT>>>...>;
             // if yes, insert correct type here
             using simd_value_type = xtl::mpl::eval_if_t<simd_arguments_exist,
-                                                        meta_identity<xsimd::simd_type<scalar_result_type>>,
+                                                        meta_identity<xt_simd::simd_type<scalar_result_type>>,
                                                         make_invalid_type<>>;
             // if all types are supported, check that the functor has a working
             // simd_apply and all arguments have the simd interface
@@ -221,7 +221,7 @@ namespace xt
         using simd_argument_type = simd_value_type;
 
         template <class requested_type>
-        using simd_return_type = xsimd::simd_return_type<value_type, requested_type>;
+        using simd_return_type = xt_simd::simd_return_type<value_type, requested_type>;
 
         using iterable_base = xconst_iterable<xfunction<F, CT...>>;
         using inner_shape_type = typename iterable_base::inner_shape_type;
@@ -276,6 +276,7 @@ namespace xt
         size_type dimension() const noexcept;
         const inner_shape_type& shape() const;
         layout_type layout() const noexcept;
+        using accessible_base::shape;
 
         template <class... Args>
         const_reference operator()(Args... args) const;
@@ -327,7 +328,7 @@ namespace xt
         operator value_type() const;
 
         template <class align, class requested_type = value_type,
-                  std::size_t N = xsimd::simd_traits<requested_type>::size>
+                  std::size_t N = xt_simd::simd_traits<requested_type>::size>
         simd_return_type<requested_type> load_simd(size_type i) const;
 
         const tuple_type& arguments() const noexcept;
@@ -474,7 +475,7 @@ namespace xt
         template <class ST>
         ST step_simd();
 
-        value_type step_leading();
+        void step_leading();
 
     private:
 
@@ -483,9 +484,6 @@ namespace xt
 
         template <class ST, std::size_t... I>
         ST step_simd_impl(std::index_sequence<I...>);
-
-        template <std::size_t... I>
-        value_type step_leading_impl(std::index_sequence<I...>);
 
         const xfunction_type* p_f;
         std::tuple<typename std::decay_t<CT>::const_stepper...> m_st;
@@ -530,7 +528,7 @@ namespace xt
     {
         static_assert(!detail::is_fixed<shape_type>::value, "Calling compute_cached_shape on fixed!");
 
-        m_cache.shape = xtl::make_sequence<xindex_type_t<inner_shape_type>>(compute_dimension(), size_type(0));
+        m_cache.shape = uninitialized_shape<xindex_type_t<inner_shape_type>>(compute_dimension());
         m_cache.is_trivial = broadcast_shape(m_cache.shape, false);
         m_cache.is_initialized = true;
     }
@@ -804,9 +802,9 @@ namespace xt
         struct get_simd_type
         {
             using simd_value_type = typename std::decay_t<T>::simd_value_type;
-            static constexpr bool is_arg_bool = ::xsimd::is_batch_bool<simd_value_type>::value;
-            static constexpr bool is_res_bool = ::xsimd::is_batch_bool<simd>::value;
-            static constexpr bool is_arg_cplx = ::xsimd::is_batch_complex<simd_value_type>::value;
+            static constexpr bool is_arg_bool = ::xt_simd::is_batch_bool<simd_value_type>::value;
+            static constexpr bool is_res_bool = ::xt_simd::is_batch_bool<simd>::value;
+            static constexpr bool is_arg_cplx = ::xt_simd::is_batch_complex<simd_value_type>::value;
             using type = std::conditional_t<is_res_bool,
                                             common_simd,
                                             std::conditional_t<is_arg_bool || is_arg_cplx,
@@ -1053,18 +1051,10 @@ namespace xt
     }
 
     template <class F, class... CT>
-    template <std::size_t... I>
-    inline auto xfunction_stepper<F, CT...>::step_leading_impl(std::index_sequence<I...>)
-        -> value_type
+    inline void xfunction_stepper<F, CT...>::step_leading()
     {
-        return (p_f->m_f)(std::get<I>(m_st).step_leading()...);
-    }
-
-    template <class F, class... CT>
-    inline auto xfunction_stepper<F, CT...>::step_leading()
-        -> value_type
-    {
-        return step_leading_impl(std::make_index_sequence<sizeof...(CT)>());
+        auto step_leading_lambda = [](auto&& st) { st.step_leading(); };
+        for_each(step_leading_lambda, m_st);
     }
 }
 

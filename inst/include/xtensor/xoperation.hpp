@@ -93,7 +93,7 @@ namespace xt
         struct conditional_ternary
         {
             template <class B>
-            using get_batch_bool = typename xsimd::simd_traits<typename xsimd::revert_simd_traits<B>::type>::bool_type;
+            using get_batch_bool = typename xt_simd::simd_traits<typename xt_simd::revert_simd_traits<B>::type>::bool_type;
 
             template <class B, class A1, class A2>
             constexpr auto operator()(const B& cond, const A1& v1, const A2& v2) const noexcept
@@ -106,7 +106,7 @@ namespace xt
                                    const B& t2,
                                    const B& t3) const noexcept
             {
-                return xsimd::select(t1, t2, t3);
+                return xt_simd::select(t1, t2, t3);
             }
         };
 
@@ -777,24 +777,61 @@ namespace xt
 
     namespace detail
     {
-        template <class S, class I>
+        template <layout_type L>
+        struct next_idx_impl;
+
+        template <>
+        struct next_idx_impl<layout_type::row_major>
+        {
+            template <class S, class I>
+            inline auto operator()(const S& shape, I& idx)
+            {
+                for (std::size_t j = shape.size(); j > 0; --j)
+                {
+                    std::size_t i = j - 1;
+                    if (idx[i] >= shape[i] - 1)
+                    {
+                        idx[i] = 0;
+                    }
+                    else
+                    {
+                        idx[i]++;
+                        return idx;
+                    }
+                }
+                // return empty index, happens at last iteration step, but remains unused
+                return I();
+            }
+        };
+
+        template <>
+        struct next_idx_impl<layout_type::column_major>
+        {
+            template <class S, class I>
+            inline auto operator()(const S& shape, I& idx)
+            {
+                for(std::size_t i = 0; i < shape.size(); ++i)
+                {
+                    if(idx[i] >= shape[i] - 1)
+                    {
+                        idx[i] = 0;
+                    }
+                    else
+                    {
+                        idx[i]++;
+                        return idx;
+                    }
+                }
+                // return empty index, happens at last iteration step, but remains unused
+                return I();
+            }
+        };
+
+        template <layout_type L = XTENSOR_DEFAULT_TRAVERSAL, class S, class I>
         inline auto next_idx(const S& shape, I& idx)
         {
-            for (std::size_t j = shape.size(); j > 0; --j)
-            {
-                std::size_t i = j - 1;
-                if (idx[i] >= shape[i] - 1)
-                {
-                    idx[i] = 0;
-                }
-                else
-                {
-                    idx[i]++;
-                    return idx;
-                }
-            }
-            // return empty index, happens at last iteration step, but remains unused
-            return I();
+            next_idx_impl<L> nii;
+            return nii(shape, idx);
         }
     }
 
@@ -863,12 +900,13 @@ namespace xt
      * @ingroup logical_operators
      * @brief return vector of indices where arr is not zero
      *
+     * @tparam L the traversal order
      * @param arr input array
      * @return vector of index_types where arr is not equal to zero (use `xt::from_indices` to convert)
      *
      * @sa xt::from_indices
      */
-    template <class T>
+    template <layout_type L = XTENSOR_DEFAULT_TRAVERSAL, class T>
     inline auto argwhere(const T& arr)
     {
         auto shape = arr.shape();
@@ -879,7 +917,7 @@ namespace xt
         std::vector<index_type> indices;
 
         size_type total_size = compute_size(shape);
-        for (size_type i = 0; i < total_size; i++, detail::next_idx(shape, idx))
+        for (size_type i = 0; i < total_size; i++, detail::next_idx<L>(shape, idx))
         {
             if (arr.element(std::begin(idx), std::end(idx)))
             {

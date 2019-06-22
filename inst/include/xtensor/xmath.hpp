@@ -537,7 +537,7 @@ XTENSOR_INT_SPECIALIZATION_IMPL(FUNC_NAME, RETURN_VAL, unsigned long long);     
             template <class A1, class A2>
             constexpr auto simd_apply(const A1& t1, const A2& t2) const noexcept
             {
-                return xsimd::select(t1 < t2, t1, t2);
+                return xt_simd::select(t1 < t2, t1, t2);
             }
         };
 
@@ -553,7 +553,7 @@ XTENSOR_INT_SPECIALIZATION_IMPL(FUNC_NAME, RETURN_VAL, unsigned long long);     
             template <class A1, class A2>
             constexpr auto simd_apply(const A1& t1, const A2& t2) const noexcept
             {
-                return xsimd::select(t1 > t2, t1, t2);
+                return xt_simd::select(t1 > t2, t1, t2);
             }
         };
 
@@ -570,7 +570,7 @@ XTENSOR_INT_SPECIALIZATION_IMPL(FUNC_NAME, RETURN_VAL, unsigned long long);     
                                       const A2& lo,
                                       const A3& hi) const
             {
-                return xsimd::select(v < lo, lo, xsimd::select(hi < v, hi, v));
+                return xt_simd::select(v < lo, lo, xt_simd::select(hi < v, hi, v));
             }
         };
     }
@@ -621,13 +621,13 @@ XTENSOR_INT_SPECIALIZATION_IMPL(FUNC_NAME, RETURN_VAL, unsigned long long);     
      * @return an \ref xreducer
      */
     XTENSOR_REDUCER_FUNCTION(amax, math::maximum, typename std::decay_t<E>::value_type,
-                             std::numeric_limits<xvalue_type_t<std::decay_t<E>>>::min())
+                             std::numeric_limits<xvalue_type_t<std::decay_t<E>>>::lowest())
 #ifdef X_OLD_CLANG
     XTENSOR_OLD_CLANG_REDUCER(amax, math::maximum, typename std::decay_t<E>::value_type,
-                              std::numeric_limits<xvalue_type_t<std::decay_t<E>>>::min())
+                              std::numeric_limits<xvalue_type_t<std::decay_t<E>>>::lowest())
 #else
     XTENSOR_MODERN_CLANG_REDUCER(amax, math::maximum, typename std::decay_t<E>::value_type,
-                                 std::numeric_limits<xvalue_type_t<std::decay_t<E>>>::min())
+                                 std::numeric_limits<xvalue_type_t<std::decay_t<E>>>::lowest())
 #endif
 
     /**
@@ -1824,7 +1824,8 @@ XTENSOR_INT_SPECIALIZATION_IMPL(FUNC_NAME, RETURN_VAL, unsigned long long);     
             std::copy(e.shape().begin(), e.shape().end(), broadcast_shape.begin());
         }
 
-        auto weights_view = reshape_view(std::forward<W>(weights), std::move(broadcast_shape));
+        constexpr layout_type L = default_assignable_layout(std::decay_t<W>::static_layout);
+        auto weights_view = reshape_view<L>(std::forward<W>(weights), std::move(broadcast_shape));
         auto scl = sum(weights_view, ax, xt::evaluation_strategy::immediate);
         return sum(std::forward<E>(e) * std::move(weights_view), std::move(ax), ev) / std::move(scl);
     }
@@ -1924,7 +1925,7 @@ XTENSOR_INT_SPECIALIZATION_IMPL(FUNC_NAME, RETURN_VAL, unsigned long long);     
         {
             keep_dim_shape[el] = 1;
         }
-        auto mrv = xt::reshape_view(std::move(inner_mean), std::move(keep_dim_shape));
+        auto mrv = reshape_view<XTENSOR_DEFAULT_LAYOUT>(std::move(inner_mean), std::move(keep_dim_shape));
         return mean(square(abs(sc - std::move(mrv))), std::forward<X>(axes), es);
     }
 
@@ -2011,7 +2012,7 @@ XTENSOR_INT_SPECIALIZATION_IMPL(FUNC_NAME, RETURN_VAL, unsigned long long);     
             return r;
         };
         auto init_func = []() {
-            return result_type{std::numeric_limits<value_type>::max(), std::numeric_limits<value_type>::min()};
+            return result_type{std::numeric_limits<value_type>::max(), std::numeric_limits<value_type>::lowest()};
         };
         auto merge_func = [](result_type r, result_type const& s) {
             r[0] = (min)(r[0], s[0]);
@@ -2516,7 +2517,7 @@ XTENSOR_INT_SPECIALIZATION_IMPL(FUNC_NAME, RETURN_VAL, unsigned long long);     
         {
             keep_dim_shape[el] = 1;
         }
-        auto mrv = xt::reshape_view(std::move(inner_mean), std::move(keep_dim_shape));
+        auto mrv = reshape_view<XTENSOR_DEFAULT_LAYOUT>(std::move(inner_mean), std::move(keep_dim_shape));
         return nanmean(square(abs(sc - std::move(mrv))), std::forward<X>(axes), es);
     }
 
@@ -2592,6 +2593,7 @@ XTENSOR_INT_SPECIALIZATION_IMPL(FUNC_NAME, RETURN_VAL, unsigned long long);     
     auto diff(const xexpression<T>& a, std::size_t n = 1, std::ptrdiff_t axis = -1)
     {
         auto ad = a.derived_cast();
+        XTENSOR_ASSERT(n <= ad.size());
         std::size_t saxis = normalize_axis(ad.dimension(), axis);
 
         if (n == 0)

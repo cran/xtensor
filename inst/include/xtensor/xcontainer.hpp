@@ -84,7 +84,7 @@ namespace xt
         using const_pointer = typename storage_type::const_pointer;
         using size_type = typename inner_types::size_type;
         using difference_type = typename storage_type::difference_type;
-        using simd_value_type = xsimd::simd_type<value_type>;
+        using simd_value_type = xt_simd::simd_type<value_type>;
 
         using shape_type = typename inner_types::shape_type;
         using strides_type = typename inner_types::strides_type;
@@ -102,8 +102,8 @@ namespace xt
 
         static constexpr layout_type static_layout = inner_types::layout;
         static constexpr bool contiguous_layout = static_layout != layout_type::dynamic;
-        using data_alignment = xsimd::container_alignment_t<storage_type>;
-        using simd_type = xsimd::simd_type<value_type>;
+        using data_alignment = xt_simd::container_alignment_t<storage_type>;
+        using simd_type = xt_simd::simd_type<value_type>;
 
         using storage_iterator = typename iterable_base::storage_iterator;
         using const_storage_iterator = typename iterable_base::const_storage_iterator;
@@ -172,12 +172,12 @@ namespace xt
         const_reference data_element(size_type i) const;
 
         template <class requested_type>
-        using simd_return_type = xsimd::simd_return_type<value_type, requested_type>;
+        using simd_return_type = xt_simd::simd_return_type<value_type, requested_type>;
 
         template <class align, class simd>
         void store_simd(size_type i, const simd& e);
         template <class align, class requested_type = value_type,
-                  std::size_t N = xsimd::simd_traits<requested_type>::size>
+                  std::size_t N = xt_simd::simd_traits<requested_type>::size>
         simd_return_type<requested_type> load_simd(size_type i) const;
 
         storage_iterator storage_begin() noexcept;
@@ -706,7 +706,7 @@ namespace xt
     inline void xcontainer<D>::store_simd(size_type i, const simd& e)
     {
         using align_mode = driven_align_mode_t<alignment, data_alignment>;
-        xsimd::store_simd<value_type, typename simd::value_type>(&(storage()[i]), e, align_mode());
+        xt_simd::store_simd<value_type, typename simd::value_type>(&(storage()[i]), e, align_mode());
     }
 
     template <class D>
@@ -715,7 +715,7 @@ namespace xt
         -> simd_return_type<requested_type>
     {
         using align_mode = driven_align_mode_t<alignment, data_alignment>;
-        return xsimd::load_simd<value_type, requested_type>(&(storage()[i]), align_mode());
+        return xt_simd::load_simd<value_type, requested_type>(&(storage()[i]), align_mode());
     }
 
     template <class D>
@@ -889,7 +889,7 @@ namespace xt
     /**
      * Resizes the container.
      * @warning Contrary to STL containers like std::vector, resize
-     * do NOT preserve the container elements.
+     * does NOT preserve the container elements.
      * @param shape the new shape
      * @param force force reshaping, even if the shape stays the same (default: false)
      */
@@ -915,7 +915,7 @@ namespace xt
     /**
      * Resizes the container.
      * @warning Contrary to STL containers like std::vector, resize
-     * do NOT preserve the container elements.
+     * does NOT preserve the container elements.
      * @param shape the new shape
      * @param l the new layout_type
      */
@@ -934,7 +934,7 @@ namespace xt
     /**
      * Resizes the container.
      * @warning Contrary to STL containers like std::vector, resize
-     * do NOT preserve the container elements.
+     * does NOT preserve the container elements.
      * @param shape the new shape
      * @param strides the new strides
      */
@@ -973,9 +973,6 @@ namespace xt
     {
         reshape_impl(std::forward<S>(shape), std::is_signed<std::decay_t<typename std::decay_t<S>::value_type>>(), std::forward<layout_type>(layout));
     }
-
-    template <class T>
-    struct DEBUG;
 
     template <class D>
     template <class T>

@@ -29,16 +29,16 @@ namespace xt
             using proxy = xtl::xproxy_wrapper<M>;
 
             template <class value_type, class requested_type>
-            using simd_return_type = xsimd::simd_return_type<value_type, requested_type>;
+            using simd_return_type = xt_simd::simd_return_type<value_type, requested_type>;
 
             template <class T>
             decltype(auto) operator()(T&& t) const
             {
-                return xtl::forward_offset<M, I>(t);
+                return xtl::forward_offset<M, I>(std::forward<T>(t));
             }
 
-            template <class align, class requested_type, std::size_t N, class E,
-                      class = std::enable_if_t<(std::is_same<M, double>::value || std::is_same<M, float>::value) && I <= sizeof(M), int>>
+            template <class align, class requested_type, std::size_t N, class E, class MF = M,
+                      class = std::enable_if_t<(std::is_same<MF, double>::value || std::is_same<MF, float>::value) && I <= sizeof(MF), int>>
             auto proxy_simd_load(const E& expr, std::size_t n) const
             {
                 // TODO refactor using shuffle only
@@ -53,8 +53,8 @@ namespace xt
                 }
             }
 
-            template <class align, class simd, class E,
-                      class = std::enable_if_t<(std::is_same<M, double>::value || std::is_same<M, float>::value) && I <= sizeof(M), int>>
+            template <class align, class simd, class E, class MF = M,
+                      class = std::enable_if_t<(std::is_same<MF, double>::value || std::is_same<MF, float>::value) && I <= sizeof(MF), int>>
             auto proxy_simd_store(E& expr, std::size_t n, const simd& batch) const
             {
                 auto x = expr.template load_simd<align, double, simd::size>(n);
