@@ -1,5 +1,6 @@
 /***************************************************************************
-* Copyright (c) 2016, Johan Mabille, Sylvain Corlay and Wolf Vollprecht    *
+* Copyright (c) Johan Mabille, Sylvain Corlay and Wolf Vollprecht          *
+* Copyright (c) QuantStack                                                 *
 *                                                                          *
 * Distributed under the terms of the BSD 3-Clause License.                 *
 *                                                                          *
@@ -334,7 +335,7 @@ namespace xt
                     buf << std::fixed;
                     buf.precision(m_precision);
                     buf << (*m_it);
-                    if (!m_required_precision)
+                    if (!m_required_precision && !std::isinf(*m_it) && !std::isnan(*m_it))
                     {
                         buf << '.';
                     }
@@ -427,7 +428,7 @@ namespace xt
         };
 
         template <class T>
-        struct printer<T, std::enable_if_t<std::is_integral<typename T::value_type>::value && !std::is_same<typename T::value_type, bool>::value>>
+        struct printer<T, std::enable_if_t<xtl::is_integral<typename T::value_type>::value && !std::is_same<typename T::value_type, bool>::value>>
         {
             using value_type = std::decay_t<typename T::value_type>;
             using cache_type = std::vector<value_type>;
@@ -459,7 +460,7 @@ namespace xt
                 {
                     m_max = math::abs(val);
                 }
-                if (std::is_signed<value_type>::value && val < 0)
+                if (xtl::is_signed<value_type>::value && val < 0)
                 {
                     m_sign = true;
                 }
@@ -596,7 +597,7 @@ namespace xt
         };
 
         template <class T>
-        struct printer<T, std::enable_if_t<!std::is_fundamental<typename T::value_type>::value && !xtl::is_complex<typename T::value_type>::value>>
+        struct printer<T, std::enable_if_t<!xtl::is_fundamental<typename T::value_type>::value && !xtl::is_complex<typename T::value_type>::value>>
         {
             using const_reference = typename T::const_reference;
             using value_type = std::decay_t<typename T::value_type>;
@@ -702,9 +703,35 @@ namespace xt
         return pretty_print(print_fun, out);
     }
 
+    namespace detail
+    {
+        template <class S>
+        class fmtflags_guard
+        {
+        public:
+
+            explicit fmtflags_guard(S& stream)
+                : m_stream(stream), m_flags(stream.flags())
+            {
+            }
+
+            ~fmtflags_guard()
+            {
+                m_stream.flags(m_flags);
+            }
+
+        private:
+
+            S& m_stream;
+            std::ios_base::fmtflags m_flags;
+        };
+    }
+
     template <class E>
     std::ostream& pretty_print(const xexpression<E>& e, std::ostream& out = std::cout)
     {
+        detail::fmtflags_guard<std::ostream> guard(out);
+
         const E& d = e.derived_cast();
 
         std::size_t lim = 0;

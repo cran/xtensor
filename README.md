@@ -1,11 +1,12 @@
 # ![Xtensor.R](./man/figures/xtensor-r.svg)
 
-[![Travis](https://travis-ci.org/QuantStack/Xtensor.R.svg?branch=master)](https://travis-ci.org/QuantStack/Xtensor.R)
-[![Appveyor](https://ci.appveyor.com/api/projects/status/1w3879ydqihq3jh6?svg=true)](https://ci.appveyor.com/project/QuantStack/xtensor-r-8hk9s)
+[![Travis](https://travis-ci.org/xtensor-stack/Xtensor.R.svg?branch=master)](https://travis-ci.org/xtensor-stack/Xtensor.R)
+[![Appveyor](https://ci.appveyor.com/api/projects/status/xk0hlhsk90vex36n?svg=true)](https://ci.appveyor.com/project/xtensor-stack/xtensor-r-7j42j)
+[![CRAN status](https://www.r-pkg.org/badges/version/xtensor)](https://CRAN.R-project.org/package=xtensor)
 [![Documentation](http://readthedocs.org/projects/xtensor-r/badge/?version=latest)](https://xtensor-r.readthedocs.io/en/latest/?badge=latest)
 [![Join the Gitter Chat](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/QuantStack/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 
-R bindings for the [xtensor](https://github.com/QuantStack/xtensor) C++ multi-dimensional array library.
+R bindings for the [xtensor](https://github.com/xtensor-stack/xtensor) C++ multi-dimensional array library.
 
  - `xtensor` is a C++ library for multi-dimensional arrays enabling numpy-style broadcasting and lazy computing.
  - `xtensor-r` enables inplace use of R arrays in C++ with all the benefits from `xtensor`
@@ -48,73 +49,54 @@ s
 
 ## Installation
 
-`xtensor-r` has been packaged for CRAN (The Comprehensive R Archive Network). It can be installed
+### From conda-forge
+
+`Xtensor.R` is available on conda-forge, it can be installed with conda, mamba, and rhumba.
+
+```bash
+mamba install r-xtensor -c conda-forge
+```
+
+### From CRAN
+
+`Xtensor.R` is available on CRAN (The Comprehensive R Archive Network).
 
 ```R
 install.packages("xtensor")
 ```
 
-or from the repository using devtools:
+### From the GitHub repository
+
+`Xtensor.R` can be installed from GitHub directly using devtools
 
 ```R
-devtools::install_github("QuantStack/xtensor-r", ref="package")
-```
-
-## Installation from Sources
-
-`xtensor-r` is primarily a C++ library that can be installed classically using cmake in any installation prefix. For example, on unix systems
-
-```bash
-cmake -D CMAKE_INSTALL_PREFIX=/prefix/path/ .
-make
-make install
-```
-
-A tarball for the R package archive network (CRAN) can be generated.
-
-```bash
-mkdir build
-cd build
-cmake -D CMAKE_INSTALL_PREFIX=/prefix/path/ ..
-make
-make cran
-```
-
-The generated tarball vendors the headers of the core `xtensor` library. It can be installed with
-
-```R
-install.packages('xtensor_0.9.0-0.tar.gz')
-```
-
-The package can be tested with a simple function call.
-
-```R
-library('xtensor')
-xtensor::rcpp_hello_xtensor(4:12)
+devtools::install_github("QuantStack/Xtensor.R", ref="package")
 ```
 
 ## Documentation
 
-To get started with using `xtensor-r`, check out the full documentation
+To get started with using `Xtensor.R`, check out the documentation at
 
 http://xtensor-r.readthedocs.io/
 
-## Dependencies on `xtensor` and `Rcpp`
+## Dependencies
 
 `xtensor-r` depends on the `xtensor` and `Rcpp` libraries
 
 | `Xtensor.R`  | `xtensor-r` | `xtensor` | `Rcpp`   |
 |--------------|-------------|-----------|----------|
-| master       |  ^0.11.1    |  ^0.20.8  | ^1.0     |
+| master       |  ^0.13.0    |  ^0.23.0  | ^1.0     |
+| 0.13.2       |  ^0.13.0    |  ^0.23.0  | ^1.0     |
+| 0.13.1       |  ^0.13.0    |  ^0.23.0  | ^1.0     |
+| 0.13.0       |  ^0.13.0    |  ^0.23.0  | ^1.0     |
+| 0.12.1       |  ^0.12.1    |  ^0.21.4  | ^1.0     |
+| 0.12.0       |  ^0.12.0    |  ^0.21.2  | ^1.0     |
 | 0.11.1       |  ^0.11.1    |  ^0.20.8  | ^1.0     |
 | 0.11.0       |  ^0.11.0    |  ^0.20.4  | ^1.0     |
 | 0.10.1       |  ^0.10.0    |  ^0.19.4  | ^1.0     |
 | 0.10.0       |  ^0.10.0    |  ^0.19.4  | ^1.0     |
 | 0.9.0        |  ^0.9.0     |  ^0.19.0  | ^1.0     |
  
- - Core `xtensor` headers are vendored in the CRAN package.
- - When using the conda, or debian package managers, xtensor-r has a dependency on xtensor.
-
 ## License
 
 We use a shared copyright model that enables all contributors to maintain the copyright on their contributions.

@@ -1,5 +1,6 @@
 /***************************************************************************
-* Copyright (c) 2016, Johan Mabille, Sylvain Corlay and Wolf Vollprecht    *
+* Copyright (c) Johan Mabille, Sylvain Corlay and Wolf Vollprecht          *
+* Copyright (c) QuantStack                                                 *
 *                                                                          *
 * Distributed under the terms of the BSD 3-Clause License.                 *
 *                                                                          *
@@ -63,6 +64,7 @@ namespace xt
         using size_type = typename raw_value_expression::size_type;
         using difference_type = typename raw_value_expression::difference_type;
         using simd_value_type = xt_simd::simd_type<value_type>;
+        using bool_load_type = xt::bool_load_type<value_type>;
 
         using shape_type = typename raw_value_expression::shape_type;
         using strides_type = typename raw_value_expression::strides_type;
@@ -128,12 +130,13 @@ namespace xt
         void resize(const S& shape, const strides_type& strides);
 
         template <class S = shape_type>
-        void reshape(const S& shape, layout_type layout = static_layout);
+        auto & reshape(const S& shape, layout_type layout = static_layout) &;
 
         template <class T>
-        void reshape(std::initializer_list<T> shape, layout_type layout = static_layout);
+        auto & reshape(std::initializer_list<T> shape, layout_type layout = static_layout) &;
 
         layout_type layout() const noexcept;
+        bool is_contiguous() const noexcept;
 
         template <class T>
         void fill(const T& value);
@@ -415,18 +418,20 @@ namespace xt
      */
     template <class D>
     template <class S>
-    inline void xoptional_assembly_base<D>::reshape(const S& shape, layout_type layout)
+    inline auto & xoptional_assembly_base<D>::reshape(const S& shape, layout_type layout) &
     {
         value().reshape(shape, layout);
         has_value().reshape(shape, layout);
+        return *this;
     }
 
     template <class D>
     template <class T>
-    inline void xoptional_assembly_base<D>::reshape(std::initializer_list<T> shape, layout_type layout)
+    inline auto & xoptional_assembly_base<D>::reshape(std::initializer_list<T> shape, layout_type layout) &
     {
         value().reshape(shape, layout);
         has_value().reshape(shape, layout);
+        return *this;
     }
 
     /**
@@ -437,6 +442,12 @@ namespace xt
     inline layout_type xoptional_assembly_base<D>::layout() const noexcept
     {
         return value().layout();
+    }
+
+    template <class D>
+    inline bool xoptional_assembly_base<D>::is_contiguous() const noexcept
+    {
+        return value().is_contiguous();
     }
 
     /**

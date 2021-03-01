@@ -1,5 +1,6 @@
 /***************************************************************************
-* Copyright (c) 2016, Johan Mabille, Sylvain Corlay and Wolf Vollprecht    *
+* Copyright (c) Johan Mabille, Sylvain Corlay and Wolf Vollprecht          *
+* Copyright (c) QuantStack                                                 *
 *                                                                          *
 * Distributed under the terms of the BSD 3-Clause License.                 *
 *                                                                          *
@@ -150,10 +151,10 @@ namespace xt
     template <std::size_t... N>
     using xshape = fixed_shape<N...>;
 
-    template <class ET, class S, layout_type L = XTENSOR_DEFAULT_LAYOUT, class Tag = xtensor_expression_tag>
+    template <class ET, class S, layout_type L = XTENSOR_DEFAULT_LAYOUT, bool Sharable = true, class Tag = xtensor_expression_tag>
     class xfixed_container;
 
-    template <class ET, class S, layout_type L = XTENSOR_DEFAULT_LAYOUT, class Tag = xtensor_expression_tag>
+    template <class ET, class S, layout_type L = XTENSOR_DEFAULT_LAYOUT, bool Sharable = true, class Tag = xtensor_expression_tag>
     class xfixed_adaptor;
 
     /**
@@ -174,12 +175,13 @@ namespace xt
      * @tparam T The value type of the elements.
      * @tparam FSH A xshape template shape.
      * @tparam L The layout_type of the tensor (default: XTENSOR_DEFAULT_LAYOUT).
-     * @tparam A The allocator of the containers holding the elements.
+     * @tparam Sharable Whether the tensor can be used in a shared expression.
      */
     template <class T,
               class FSH,
-              layout_type L = XTENSOR_DEFAULT_LAYOUT>
-    using xtensor_fixed = xfixed_container<T, FSH, L>;
+              layout_type L = XTENSOR_DEFAULT_LAYOUT,
+              bool Sharable = true>
+    using xtensor_fixed = xfixed_container<T, FSH, L, Sharable>;
 
     /**
      * @typedef xtensor_optional

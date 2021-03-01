@@ -1,5 +1,6 @@
 /***************************************************************************
-* Copyright (c) 2016, Sylvain Corlay and Johan Mabille                     *
+* Copyright (c) Johan Mabille, Sylvain Corlay and Wolf Vollprecht          *
+* Copyright (c) QuantStack                                                 *
 *                                                                          *
 * Distributed under the terms of the BSD 3-Clause License.                 *
 *                                                                          *
@@ -16,6 +17,7 @@
 #include "xclosure.hpp"
 #include "xspan.hpp"
 #include "xiterator_base.hpp"
+#include "xtype_traits.hpp"
 
 namespace xtl
 {
@@ -62,7 +64,7 @@ namespace xtl
     struct container_internals<xtl::span<X>>
     {
         using value_type = typename xtl::span<X>::value_type;
-        static_assert(std::is_scalar<value_type>::value, "");
+        static_assert(xtl::is_scalar<value_type>::value, "");
         using allocator_type = std::allocator<value_type>;
         using size_type = std::size_t;
         using difference_type = typename xtl::span<X>::difference_type;
@@ -72,7 +74,7 @@ namespace xtl
     struct container_internals<std::vector<X, A>>
     {
         using value_type = X;
-        static_assert(std::is_scalar<value_type>::value, "");
+        static_assert(xtl::is_scalar<value_type>::value, "");
         using allocator_type = A;
         using size_type = typename std::vector<X>::size_type;
         using difference_type = typename std::vector<X>::difference_type;
@@ -255,7 +257,7 @@ namespace xtl
         if (sz != this->m_size) {
 #if defined(XTL_NO_EXCEPTIONS)
             std::fprintf(stderr, "cannot resize bitset_view\n");
-            std::terminate();        
+            std::terminate();
 #else
             throw std::runtime_error("cannot resize bitset_view");
 #endif
@@ -576,10 +578,10 @@ namespace xtl
     }
 
     template <class B, class A>
-    inline void xdynamic_bitset<B, A>::resize(size_type size, bool b)
+    inline void xdynamic_bitset<B, A>::resize(size_type asize, bool b)
     {
         size_type old_block_count = base_type::block_count();
-        size_type new_block_count = base_type::compute_block_count(size);
+        size_type new_block_count = base_type::compute_block_count(asize);
         block_type value = b ? ~block_type(0) : block_type(0);
 
         if (new_block_count != old_block_count)
@@ -587,7 +589,7 @@ namespace xtl
             base_type::m_buffer.resize(new_block_count, value);
         }
 
-        if (b && size > base_type::m_size)
+        if (b && asize > base_type::m_size)
         {
             size_type extra_bits = base_type::count_extra_bits();
             if (extra_bits > 0)
@@ -596,7 +598,7 @@ namespace xtl
             }
         }
 
-        base_type::m_size = size;
+        base_type::m_size = asize;
         base_type::zero_unused_bits();
     }
 
@@ -1076,7 +1078,7 @@ namespace xtl
     }
 
     template <class B>
-    inline auto xdynamic_bitset_base<B>::derived_cast() const -> const derived_class& 
+    inline auto xdynamic_bitset_base<B>::derived_cast() const -> const derived_class&
     {
         return *(reinterpret_cast<const derived_class*>(this));
     }

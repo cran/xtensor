@@ -1,5 +1,6 @@
 /***************************************************************************
-* Copyright (c) 2016, Johan Mabille, Sylvain Corlay and Wolf Vollprecht    *
+* Copyright (c) Johan Mabille, Sylvain Corlay and Wolf Vollprecht          *
+* Copyright (c) QuantStack                                                 *
 *                                                                          *
 * Distributed under the terms of the BSD 3-Clause License.                 *
 *                                                                          *
@@ -10,16 +11,26 @@
 #define XTENSOR_CONFIG_HPP
 
 #define XTENSOR_VERSION_MAJOR 0
-#define XTENSOR_VERSION_MINOR 20
-#define XTENSOR_VERSION_PATCH 8
+#define XTENSOR_VERSION_MINOR 23
+#define XTENSOR_VERSION_PATCH 1
 
-// DETECT 3.6 <= clang < 3.8 for compiler bug workaround.
-#ifdef __clang__
-    #if __clang_major__ == 3 && __clang_minor__ < 8
-        #define X_OLD_CLANG
-        #include <initializer_list>
-        #include <vector>
-    #endif
+
+// Define if the library is going to be using exceptions.
+#if (!defined(__cpp_exceptions) && !defined(__EXCEPTIONS) && !defined(_CPPUNWIND))
+#undef XTENSOR_DISABLE_EXCEPTIONS
+#define XTENSOR_DISABLE_EXCEPTIONS
+#endif
+
+// Exception support.
+#if defined(XTENSOR_DISABLE_EXCEPTIONS)
+#include <iostream>
+#define XTENSOR_THROW(_, msg)            \
+    {                                    \
+      std::cerr << msg << std::endl;     \
+      std::abort();                      \
+    }
+#else
+#define XTENSOR_THROW(exception, msg) throw exception(msg)
 #endif
 
 // Workaround for some missing constexpr functionality in MSVC 2015 and MSVC 2017 x86
@@ -85,6 +96,18 @@
 
 #ifndef XTENSOR_DEFAULT_TRAVERSAL
 #define XTENSOR_DEFAULT_TRAVERSAL ::xt::layout_type::row_major
+#endif
+
+#ifndef XTENSOR_OPENMP_TRESHOLD
+#define XTENSOR_OPENMP_TRESHOLD 0
+#endif
+
+#ifndef XTENSOR_SELECT_ALIGN
+#define XTENSOR_SELECT_ALIGN(T) (XTENSOR_DEFAULT_ALIGNMENT != 0 ? XTENSOR_DEFAULT_ALIGNMENT : alignof(T))
+#endif
+
+#ifndef XTENSOR_FIXED_ALIGN
+#define XTENSOR_FIXED_ALIGN XTENSOR_SELECT_ALIGN(void*)
 #endif
 
 #ifdef IN_DOXYGEN

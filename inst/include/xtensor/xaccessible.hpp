@@ -1,5 +1,6 @@
 /***************************************************************************
-* Copyright (c) 2016, Johan Mabille, Sylvain Corlay and Wolf Vollprecht    *
+* Copyright (c) Johan Mabille, Sylvain Corlay and Wolf Vollprecht          *
+* Copyright (c) QuantStack                                                 *
 *                                                                          *
 * Distributed under the terms of the BSD 3-Clause License.                 *
 *                                                                          *
@@ -22,8 +23,7 @@ namespace xt
      * The xaccessible class implements constant access methods common to all expressions.
      *
      * @tparam D The derived type, i.e. the inheriting class for which xconst_accessible
-     *      
-     *
+     *           provides the interface.
      */
     template <class D>
     class xconst_accessible

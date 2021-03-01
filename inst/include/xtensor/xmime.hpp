@@ -1,5 +1,6 @@
 /***************************************************************************
-* Copyright (c) 2016, Johan Mabille, Sylvain Corlay and Wolf Vollprecht    *
+* Copyright (c) Johan Mabille, Sylvain Corlay and Wolf Vollprecht          *
+* Copyright (c) QuantStack                                                 *
 *                                                                          *
 * Distributed under the terms of the BSD 3-Clause License.                 *
 *                                                                          *
@@ -236,9 +237,9 @@ namespace xt
 
         std::size_t edgeitems = 0;
         std::size_t size = compute_size(expr.shape());
-        if (size > print_options::print_options().threshold)
+        if (size > static_cast<std::size_t>(print_options::print_options().threshold))
         {
-            edgeitems = print_options::print_options().edge_items;
+            edgeitems = static_cast<std::size_t>(print_options::print_options().edge_items);
         }
 
         if (print_options::print_options().precision != -1)
@@ -295,11 +296,11 @@ namespace xt
         return mime_bundle_repr_impl(expr);
     }
 
-    template <class ET, class S, layout_type L, class Tag>
+    template <class ET, class S, layout_type L, bool SH, class Tag>
     class xfixed_container;
 
-    template <class ET, class S, layout_type L, class Tag>
-    nlohmann::json mime_bundle_repr(const xfixed_container<ET, S, L, Tag>& expr)
+    template <class ET, class S, layout_type L, bool SH, class Tag>
+    nlohmann::json mime_bundle_repr(const xfixed_container<ET, S, L, SH, Tag>& expr)
     {
         return mime_bundle_repr_impl(expr);
     }

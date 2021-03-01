@@ -1,5 +1,6 @@
 /***************************************************************************
-* Copyright (c) 2016, Johan Mabille, Sylvain Corlay and Wolf Vollprecht    *
+* Copyright (c) Johan Mabille, Sylvain Corlay and Wolf Vollprecht          *
+* Copyright (c) QuantStack                                                 *
 *                                                                          *
 * Distributed under the terms of the BSD 3-Clause License.                 *
 *                                                                          *
@@ -34,7 +35,7 @@ namespace xt
     class fixed_shape;
 
     using xindex = dynamic_shape<std::size_t>;
-    
+
     template <class S1, class S2>
     bool same_shape(const S1& s1, const S2& s2) noexcept;
 
@@ -43,6 +44,9 @@ namespace xt
 
     template <class R, class T>
     constexpr R shape(T t);
+
+    template<class R = std::size_t, class T, std::size_t N>
+    xt::static_shape<R, N> shape(const T(&aList)[N]);
 
     template <class S>
     struct static_dimension;
@@ -92,10 +96,53 @@ namespace xt
      * same_shape *
      **************/
 
+    /**
+    * @ingroup same_shape
+    * @brief same_shape
+    *
+    * Check if two objects have the same shape.
+    * @param s1 an array
+    * @param s2 an array
+    * @return bool
+    */
     template <class S1, class S2>
     inline bool same_shape(const S1& s1, const S2& s2) noexcept
     {
         return s1.size() == s2.size() && std::equal(s1.begin(), s1.end(), s2.begin());
+    }
+
+    /*************
+     * has_shape *
+     *************/
+
+    /**
+    * @ingroup has_shape
+    * @brief has_shape
+    *
+    * Check if an object has a certain shape.
+    * @param a an array
+    * @param shape the shape to test
+    * @return bool
+    */
+    template <class E, class S>
+    inline bool has_shape(const E& e, std::initializer_list<S> shape) noexcept
+    {
+        return e.shape().size() == shape.size() && std::equal(e.shape().cbegin(), e.shape().cend(), shape.begin());
+    }
+
+    /**
+    * @ingroup has_shape
+    * @brief has_shape
+    *
+    * Check if an object has a certain shape.
+    * @param a an array
+    * @param shape the shape to test
+    * @return bool
+    */
+    template <class E, class S, class = typename std::enable_if_t<has_iterator_interface<S>::value>>
+    inline bool has_shape(const E& e, const S& shape)
+    {
+        return e.shape().size() == shape.size() && std::equal(e.shape().cbegin(), e.shape().cend(), shape.begin());
     }
 
     /*************************
@@ -161,6 +208,14 @@ namespace xt
     constexpr R shape(T t)
     {
         return detail::initializer_shape<R, decltype(t)>(t, std::make_index_sequence<initializer_dimension<decltype(t)>::value>());
+    }
+
+    /** @brief Generate an xt::static_shape of the given size. */
+    template<class R, class T, std::size_t N>
+    xt::static_shape<R, N> shape(const T(&list)[N]) {
+        xt::static_shape<R, N> shape;
+        std::copy(std::begin(list), std::end(list), std::begin(shape));
+        return shape;
     }
 
     /********************
@@ -328,6 +383,9 @@ namespace xt
         using only_fixed = std::integral_constant<bool, xtl::disjunction<is_fixed<S>...>::value &&
                                                         xtl::conjunction<xtl::disjunction<is_fixed<S>, is_scalar_shape<S>>...>::value>;
 
+        template <class... S>
+        using all_fixed = xtl::conjunction<is_fixed<S>...>;
+
         // The promote_index meta-function returns std::vector<promoted_value_type> in the
         // general case and an array of the promoted value type and maximal size if all
         // arguments are of type std::array
@@ -449,6 +507,33 @@ namespace xt
 
     template <class S>
     using index_from_shape_t = typename index_from_shape<S>::type;
+
+    /**********************
+     * filter_fixed_shape *
+     **********************/
+
+    namespace detail
+    {
+        template <class S>
+        struct filter_fixed_shape_impl
+        {
+            using type = S;
+        };
+
+        template <std::size_t... N>
+        struct filter_fixed_shape_impl<fixed_shape<N...>>
+        {
+            using type = std::array<std::size_t, sizeof...(N)>;
+        };
+    }
+
+    template <class S>
+    struct filter_fixed_shape : detail::filter_fixed_shape_impl<S>
+    {
+    };
+
+    template <class S>
+    using filter_fixed_shape_t = typename filter_fixed_shape<S>::type;
 }
 
 #endif

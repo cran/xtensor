@@ -1,5 +1,6 @@
 /***************************************************************************
-* Copyright (c) 2016, Johan Mabille, Sylvain Corlay and Wolf Vollprecht    *
+* Copyright (c) Johan Mabille, Sylvain Corlay and Wolf Vollprecht          *
+* Copyright (c) QuantStack                                                 *
 *                                                                          *
 * Distributed under the terms of the BSD 3-Clause License.                 *
 *                                                                          *
@@ -17,6 +18,7 @@
 
 #include "xexpression.hpp"
 #include "xiterable.hpp"
+#include "xoperation.hpp"
 #include "xsemantic.hpp"
 #include "xstrides.hpp"
 #include "xutils.hpp"
@@ -95,7 +97,7 @@ namespace xt
         using self_type = xindex_view<CT, I>;
         using xexpression_type = std::decay_t<CT>;
         using semantic_base = xview_semantic<self_type>;
-        
+
         using extension_base = extension::xindex_view_base_t<CT, I>;
         using expression_tag = typename extension_base::expression_tag;
 
@@ -119,6 +121,8 @@ namespace xt
         using temporary_type = typename xcontainer_inner_types<self_type>::temporary_type;
         using base_index_type = xindex_type_t<shape_type>;
 
+        using bool_load_type = typename xexpression_type::bool_load_type;
+
         static constexpr layout_type static_layout = layout_type::dynamic;
         static constexpr bool contiguous_layout = false;
 
@@ -134,7 +138,9 @@ namespace xt
         size_type size() const noexcept;
         size_type dimension() const noexcept;
         const inner_shape_type& shape() const noexcept;
+        size_type shape(size_type index) const;
         layout_type layout() const noexcept;
+        bool is_contiguous() const noexcept;
 
         template <class T>
         void fill(const T& value);
@@ -345,10 +351,26 @@ namespace xt
         return m_shape;
     }
 
+
+    /**
+     * Returns the i-th dimension of the expression.
+     */
+    template <class CT, class I>
+    inline auto xindex_view<CT, I>::shape(size_type i) const -> size_type
+    {
+        return m_shape[i];
+    }
+
     template <class CT, class I>
     inline layout_type xindex_view<CT, I>::layout() const noexcept
     {
         return static_layout;
+    }
+
+    template <class CT, class I>
+    inline bool xindex_view<CT, I>::is_contiguous() const noexcept
+    {
+        return false;
     }
 
     //@}
@@ -731,26 +753,13 @@ namespace xt
         using view_type = xindex_view<xclosure_t<E>, std::decay_t<I>>;
         return view_type(std::forward<E>(e), std::forward<I>(indices));
     }
-#ifdef X_OLD_CLANG
-    template <class E, class I>
-    inline auto index_view(E&& e, std::initializer_list<std::initializer_list<I>> indices) noexcept
-    {
-        std::vector<xindex> idx;
-        for (auto it = indices.begin(); it != indices.end(); ++it)
-        {
-            idx.emplace_back(xindex(it->begin(), it->end()));
-        }
-        using view_type = xindex_view<xclosure_t<E>, std::vector<xindex>>;
-        return view_type(std::forward<E>(e), std::move(idx));
-    }
-#else
+
     template <class E, std::size_t L>
     inline auto index_view(E&& e, const xindex (&indices)[L]) noexcept
     {
         using view_type = xindex_view<xclosure_t<E>, std::array<xindex, L>>;
         return view_type(std::forward<E>(e), to_array(indices));
     }
-#endif
 
     /**
      * @brief creates a view into \a e filtered by \a condition.

@@ -1,5 +1,6 @@
 /***************************************************************************
-* Copyright (c) 2016, Johan Mabille, Sylvain Corlay and Wolf Vollprecht    *
+* Copyright (c) Johan Mabille, Sylvain Corlay and Wolf Vollprecht          *
+* Copyright (c) QuantStack                                                 *
 *                                                                          *
 * Distributed under the terms of the BSD 3-Clause License.                 *
 *                                                                          *
@@ -24,6 +25,7 @@
 #include "xiterable.hpp"
 #include "xscalar.hpp"
 #include "xstrides.hpp"
+#include "xtensor_config.hpp"
 #include "xutils.hpp"
 
 namespace xt
@@ -36,13 +38,8 @@ namespace xt
     template <class E, class S>
     auto broadcast(E&& e, const S& s);
 
-#ifdef X_OLD_CLANG
-    template <class E, class I>
-    auto broadcast(E&& e, std::initializer_list<I> s);
-#else
     template <class E, class I, std::size_t L>
     auto broadcast(E&& e, const I (&s)[L]);
-#endif
 
     /*************************
      * xbroadcast extensions *
@@ -136,7 +133,7 @@ namespace xt
      * @sa broadcast
      */
     template <class CT, class X>
-    class xbroadcast : public xexpression<xbroadcast<CT, X>>,
+    class xbroadcast : public xsharable_expression<xbroadcast<CT, X>>,
                        public xconst_iterable<xbroadcast<CT, X>>,
                        public xconst_accessible<xbroadcast<CT, X>>,
                        public extension::xbroadcast_base_t<CT, X>
@@ -145,6 +142,7 @@ namespace xt
 
         using self_type = xbroadcast<CT, X>;
         using xexpression_type = std::decay_t<CT>;
+        using accessible_base = xconst_accessible<self_type>;
         using extension_base = extension::xbroadcast_base_t<CT, X>;
         using expression_tag = typename extension_base::expression_tag;
 
@@ -164,6 +162,8 @@ namespace xt
         using stepper = typename iterable_base::stepper;
         using const_stepper = typename iterable_base::const_stepper;
 
+        using bool_load_type = typename xexpression_type::bool_load_type;
+
         static constexpr layout_type static_layout = layout_type::dynamic;
         static constexpr bool contiguous_layout = false;
 
@@ -173,8 +173,11 @@ namespace xt
         template <class CTA>
         xbroadcast(CTA&& e, shape_type&& s);
 
+        using accessible_base::size;
         const inner_shape_type& shape() const noexcept;
         layout_type layout() const noexcept;
+        bool is_contiguous() const noexcept;
+        using accessible_base::shape;
 
         template <class... Args>
         const_reference operator()(Args... args) const;
@@ -230,19 +233,11 @@ namespace xt
     template <class E, class S>
     inline auto broadcast(E&& e, const S& s)
     {
-        using broadcast_type = xbroadcast<const_xclosure_t<E>, S>;
-        return broadcast_type(std::forward<E>(e), s);
-    }
-
-#ifdef X_OLD_CLANG
-    template <class E, class I>
-    inline auto broadcast(E&& e, std::initializer_list<I> s)
-    {
-        using broadcast_type = xbroadcast<const_xclosure_t<E>, std::vector<std::size_t>>;
-        using shape_type = typename broadcast_type::shape_type;
+        using shape_type = filter_fixed_shape_t<std::decay_t<S>>;
+        using broadcast_type = xbroadcast<const_xclosure_t<E>, shape_type>;
         return broadcast_type(std::forward<E>(e), xtl::forward_sequence<shape_type, decltype(s)>(s));
     }
-#else
+
     template <class E, class I, std::size_t L>
     inline auto broadcast(E&& e, const I (&s)[L])
     {
@@ -250,7 +245,6 @@ namespace xt
         using shape_type = typename broadcast_type::shape_type;
         return broadcast_type(std::forward<E>(e), xtl::forward_sequence<shape_type, decltype(s)>(s));
     }
-#endif
 
     /*****************************
      * xbroadcast implementation *
@@ -274,7 +268,7 @@ namespace xt
     {
         if (s.size() < m_e.dimension())
         {
-            throw xt::broadcast_error("Broadcast shape has fewer elements than original expression.");
+            XTENSOR_THROW(xt::broadcast_error, "Broadcast shape has fewer elements than original expression.");
         }
         xt::resize_container(m_shape, s.size());
         std::copy(s.begin(), s.end(), m_shape.begin());
@@ -318,11 +312,19 @@ namespace xt
     {
         return m_e.layout();
     }
+
+    template <class CT, class X>
+    inline bool xbroadcast<CT, X>::is_contiguous() const noexcept
+    {
+        return false;
+    }
+
     //@}
 
     /**
      * @name Data
      */
+    //@{
     /**
      * Returns a constant reference to the element at the specified position in the expression.
      * @param args a list of indices specifying the position in the function. Indices

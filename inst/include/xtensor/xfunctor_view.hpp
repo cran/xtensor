@@ -1,5 +1,6 @@
 /***************************************************************************
-* Copyright (c) 2016, Johan Mabille, Sylvain Corlay and Wolf Vollprecht    *
+* Copyright (c) Johan Mabille, Sylvain Corlay and Wolf Vollprecht          *
+* Copyright (c) QuantStack                                                 *
 *                                                                          *
 * Distributed under the terms of the BSD 3-Clause License.                 *
 *                                                                          *
@@ -103,6 +104,8 @@ namespace xt
                                                            detail::expr_inner_backstrides_type<xexpression_type>,
                                                            get_strides_type<shape_type>>;
 
+        using bool_load_type = xt::bool_load_type<value_type>;
+
         static constexpr layout_type static_layout = xexpression_type::static_layout;
         static constexpr bool contiguous_layout = xexpression_type::contiguous_layout;
 
@@ -152,6 +155,7 @@ namespace xt
         using accessible_base::shape;
 
         layout_type layout() const noexcept;
+        bool is_contiguous() const noexcept;
 
         template <class... Args>
         reference operator()(Args... args);
@@ -308,6 +312,14 @@ namespace xt
         friend class xconst_accessible<D>;
     };
 
+    template <class D, class T>
+    struct has_simd_interface<xfunctor_applier_base<D>, T>
+        : xtl::conjunction<has_simd_type<T>,
+                           has_simd_interface<typename xfunctor_applier_base<D>::xexpression_type>,
+                           detail::has_simd_interface_impl<xfunctor_applier_base<D>, T>>
+    {
+    };
+
     /********************************
      * xfunctor_view_temporary_type *
      ********************************/
@@ -351,6 +363,12 @@ namespace xt
         using const_reference = decltype(std::declval<F>()(std::declval<const xexpression_type>()()));
         using size_type = typename xexpression_type::size_type;
         using temporary_type = typename xfunctor_view_temporary_type<F, xexpression_type>::type;
+    };
+
+    template <class F, class CT, class T>
+    struct has_simd_interface<xfunctor_view<F, CT>, T>
+        : has_simd_interface<xfunctor_applier_base<xfunctor_view<F, CT>>, T>
+    {
     };
 
     /**
@@ -424,6 +442,12 @@ namespace xt
         using temporary_type = typename xfunctor_view_temporary_type<F, xexpression_type>::type;
     };
 
+    template <class F, class CT, class T>
+    struct has_simd_interface<xfunctor_adaptor<F, CT>, T>
+        : has_simd_interface<xfunctor_applier_base<xfunctor_adaptor<F, CT>>, T>
+    {
+    };
+
     /**
      * @class xfunctor_adaptor
      * @brief Adapt a container with a functor, forwarding methods such as resize / reshape.
@@ -468,7 +492,7 @@ namespace xt
         auto resize(S&& shape, const strides_type& strides);
 
         template <class S = shape_type>
-        auto reshape(S&& shape, layout_type layout = base_type::static_layout);
+        auto & reshape(S&& shape, layout_type layout = base_type::static_layout) &;
 
     private:
 
@@ -569,6 +593,8 @@ namespace xt
         using pointer = std::remove_reference_t<reference>*;
         using size_type = typename ST::size_type;
         using difference_type = typename ST::difference_type;
+
+        using shape_type = typename ST::shape_type;
 
         xfunctor_stepper() = default;
         xfunctor_stepper(const ST&, functor_type*);
@@ -671,6 +697,12 @@ namespace xt
     inline layout_type xfunctor_applier_base<D>::layout() const noexcept
     {
         return m_e.layout();
+    }
+
+    template <class D>
+    inline bool xfunctor_applier_base<D>::is_contiguous() const noexcept
+    {
+        return m_e.is_contiguous();
     }
     //@}
 
@@ -1383,9 +1415,10 @@ namespace xt
 
     template <class F, class CT>
     template <class S>
-    auto xfunctor_adaptor<F, CT>::reshape(S&& shape, layout_type layout)
+    auto & xfunctor_adaptor<F, CT>::reshape(S&& shape, layout_type layout) &
     {
         this->m_e.reshape(std::forward<S>(shape), layout);
+        return *this;
     }
 
     /************************************

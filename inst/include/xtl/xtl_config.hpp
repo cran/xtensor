@@ -1,5 +1,6 @@
 /***************************************************************************
-* Copyright (c) 2017, Sylvain Corlay and Johan Mabille                     *
+* Copyright (c) Johan Mabille, Sylvain Corlay and Wolf Vollprecht          *
+* Copyright (c) QuantStack                                                 *
 *                                                                          *
 * Distributed under the terms of the BSD 3-Clause License.                 *
 *                                                                          *
@@ -10,8 +11,8 @@
 #define XTL_CONFIG_HPP
 
 #define XTL_VERSION_MAJOR 0
-#define XTL_VERSION_MINOR 6
-#define XTL_VERSION_PATCH 4
+#define XTL_VERSION_MINOR 7
+#define XTL_VERSION_PATCH 2
 
 #ifndef __has_feature
 #define __has_feature(x) 0
@@ -23,6 +24,16 @@
 #else
 // Exceptions are disabled.
 #define XTL_NO_EXCEPTIONS
+#endif
+
+#if defined(XTL_NO_EXCEPTIONS)
+#define XTL_THROW(_, msg)              \
+    {                                  \
+        std::cerr << msg << std::endl; \
+        std::abort();                  \
+    }
+#else
+#define XTL_THROW(exception, msg) throw exception(msg)
 #endif
 
 #endif

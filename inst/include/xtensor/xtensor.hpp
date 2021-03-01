@@ -1,5 +1,6 @@
 /***************************************************************************
-* Copyright (c) 2016, Johan Mabille, Sylvain Corlay and Wolf Vollprecht    *
+* Copyright (c) Johan Mabille, Sylvain Corlay and Wolf Vollprecht          *
+* Copyright (c) QuantStack                                                 *
 *                                                                          *
 * Distributed under the terms of the BSD 3-Clause License.                 *
 *                                                                          *
@@ -104,6 +105,7 @@ namespace xt
         using inner_strides_type = typename base_type::inner_strides_type;
         using temporary_type = typename semantic_base::temporary_type;
         using expression_tag = Tag;
+        constexpr static std::size_t rank = N;
 
         xtensor_container();
         xtensor_container(nested_initializer_list_t<value_type, N> t);
@@ -758,7 +760,7 @@ namespace xt
         std::fill(m_storage.begin(), m_storage.end(), e);
         return *this;
     }
-    
+
     template <class EC, std::size_t N, layout_type L, class Tag>
     inline auto xtensor_view<EC, N, L, Tag>::storage_impl() noexcept -> storage_type&
     {
@@ -812,7 +814,7 @@ namespace xt
      * Converts ``std::vector<index_type>`` (returned e.g. from ``xt::argwhere``) to a flattened
      * ``xtensor``.
      *
-     * @param vector of indices
+     * @param idx a vector of indices
      *
      * @return ``xt::xtensor<typename index_type::value_type, 1>`` (e.g. ``xt::xtensor<size_t, 1>``)
      */

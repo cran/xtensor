@@ -1,5 +1,6 @@
 /***************************************************************************
-* Copyright (c) 2016, Johan Mabille, Sylvain Corlay and Wolf Vollprecht    *
+* Copyright (c) Johan Mabille, Sylvain Corlay and Wolf Vollprecht          *
+* Copyright (c) QuantStack                                                 *
 *                                                                          *
 * Distributed under the terms of the BSD 3-Clause License.                 *
 *                                                                          *
@@ -95,7 +96,7 @@ namespace xtl
             }
         };
     }
-    
+
     template <class S>
     inline S make_sequence(typename S::size_type size)
     {
@@ -131,9 +132,10 @@ namespace xtl
                 return ret;
             }
         };
-        
+
         template <class R, class A>
-        struct sequence_forwarder_impl<R, A, void_t<decltype(std::declval<R>().resize(std::size_t()))>>
+        struct sequence_forwarder_impl<R, A, void_t<decltype(std::declval<R>().resize(
+              std::declval<std::size_t>()))>>
         {
             template <class T>
             static inline auto forward(const T& r)
@@ -197,6 +199,16 @@ namespace xtl
     constexpr std::size_t sequence_size(const T (&)[N])
     {
         return N;
+    }
+
+    /****************************
+     * are_equivalent_sequences *
+     ****************************/
+
+    template <class E1, class E2>
+    inline bool are_equivalent_sequences(const E1& e1, const E2& e2)
+    {
+        return std::equal(e1.cbegin(), e1.cend(), e2.cbegin(), e2.cend());
     }
 }
 

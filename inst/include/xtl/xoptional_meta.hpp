@@ -1,6 +1,7 @@
 /***************************************************************************
-* Copyright (c) 2016, Johan Mabille, Sylvain Corlay, Wolf Vollprecht and   *
+* Copyright (c) Johan Mabille, Sylvain Corlay, Wolf Vollprecht and         *
 * Martin Renou                                                             *
+* Copyright (c) QuantStack                                                 *
 *                                                                          *
 * Distributed under the terms of the BSD 3-Clause License.                 *
 *                                                                          *
@@ -79,8 +80,8 @@ namespace xtl
         {
             using decay_t1 = std::decay_t<T1>;
             using decay_t2 = std::decay_t<T2>;
-            using type1 = xtl::mpl::eval_if_t<std::is_fundamental<decay_t1>, identity<decay_t1>, get_value_type<decay_t1>>;
-            using type2 = xtl::mpl::eval_if_t<std::is_fundamental<decay_t2>, identity<decay_t2>, get_value_type<decay_t2>>;
+            using type1 = xtl::mpl::eval_if_t<xtl::is_fundamental<decay_t1>, identity<decay_t1>, get_value_type<decay_t1>>;
+            using type2 = xtl::mpl::eval_if_t<xtl::is_fundamental<decay_t2>, identity<decay_t2>, get_value_type<decay_t2>>;
             using type = xoptional<std::common_type_t<type1, type2>>;
         };
 

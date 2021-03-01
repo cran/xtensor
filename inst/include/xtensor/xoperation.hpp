@@ -1,5 +1,6 @@
 /***************************************************************************
-* Copyright (c) 2016, Johan Mabille, Sylvain Corlay and Wolf Vollprecht    *
+* Copyright (c) Johan Mabille, Sylvain Corlay and Wolf Vollprecht          *
+* Copyright (c) QuantStack                                                 *
 *                                                                          *
 * Distributed under the terms of the BSD 3-Clause License.                 *
 *                                                                          *
@@ -19,7 +20,6 @@
 #include "xscalar.hpp"
 #include "xstrides.hpp"
 #include "xstrided_view.hpp"
-#include "xmanipulation.hpp"
 
 namespace xt
 {
@@ -28,7 +28,7 @@ namespace xt
      * helpers *
      ***********/
 
-#define UNARY_OPERATOR_FUNCTOR_IMPL(NAME, OP, R)                                \
+#define UNARY_OPERATOR_FUNCTOR(NAME, OP)                                        \
     struct NAME                                                                 \
     {                                                                           \
         template <class A1>                                                     \
@@ -43,16 +43,36 @@ namespace xt
         }                                                                       \
     }
 
-#define UNARY_OPERATOR_FUNCTOR(NAME, OP) UNARY_OPERATOR_FUNCTOR_IMPL(NAME, OP, T)
-#define UNARY_BOOL_OPERATOR_FUNCTOR(NAME, OP) UNARY_OPERATOR_FUNCTOR_IMPL(NAME, OP, bool)
+#define DEFINE_COMPLEX_OVERLOAD(OP)                                                       \
+template <class T1, class T2, XTL_REQUIRES(xtl::negation<std::is_same<T1, T2>>)>          \
+constexpr auto operator OP(const std::complex<T1>& arg1, const std::complex<T2>& arg2)    \
+{                                                                                         \
+    using result_type = typename xtl::promote_type_t<std::complex<T1>, std::complex<T2>>; \
+    return (result_type(arg1) OP result_type(arg2));                                      \
+}                                                                                         \
+                                                                                          \
+template <class T1, class T2, XTL_REQUIRES(xtl::negation<std::is_same<T1, T2>>)>          \
+constexpr auto operator OP(const T1& arg1, const std::complex<T2>& arg2)                  \
+{                                                                                         \
+    using result_type = typename xtl::promote_type_t<T1, std::complex<T2>>;               \
+    return (result_type(arg1) OP result_type(arg2));                                      \
+}                                                                                         \
+                                                                                          \
+template <class T1, class T2, XTL_REQUIRES(xtl::negation<std::is_same<T1, T2>>)>          \
+constexpr auto operator OP(const std::complex<T1>& arg1, const T2& arg2)                  \
+{                                                                                         \
+    using result_type = typename xtl::promote_type_t<std::complex<T1>, T2>;               \
+    return (result_type(arg1) OP result_type(arg2));                                      \
+}
 
-#define BINARY_OPERATOR_FUNCTOR_IMPL(NAME, OP, R)                                \
+#define BINARY_OPERATOR_FUNCTOR(NAME, OP)                                        \
     struct NAME                                                                  \
     {                                                                            \
         template <class T1, class T2>                                            \
-        constexpr auto operator()(const T1& arg1, const T2& arg2) const          \
+        constexpr auto operator()(T1&& arg1, T2&& arg2) const                    \
         {                                                                        \
-            return (arg1 OP arg2);                                               \
+            using xt::detail::operator OP;                                       \
+            return (std::forward<T1>(arg1) OP std::forward<T2>(arg2));           \
         }                                                                        \
         template <class B>                                                       \
         constexpr auto simd_apply(const B& arg1, const B& arg2) const            \
@@ -61,11 +81,26 @@ namespace xt
         }                                                                        \
     }
 
-#define BINARY_OPERATOR_FUNCTOR(NAME, OP) BINARY_OPERATOR_FUNCTOR_IMPL(NAME, OP, T)
-#define BINARY_BOOL_OPERATOR_FUNCTOR(NAME, OP) BINARY_OPERATOR_FUNCTOR_IMPL(NAME, OP, bool)
-
     namespace detail
     {
+        DEFINE_COMPLEX_OVERLOAD(+);
+        DEFINE_COMPLEX_OVERLOAD(-);
+        DEFINE_COMPLEX_OVERLOAD(*);
+        DEFINE_COMPLEX_OVERLOAD(/);
+        DEFINE_COMPLEX_OVERLOAD(%);
+        DEFINE_COMPLEX_OVERLOAD(||);
+        DEFINE_COMPLEX_OVERLOAD(&&);
+        DEFINE_COMPLEX_OVERLOAD(|);
+        DEFINE_COMPLEX_OVERLOAD(&);
+        DEFINE_COMPLEX_OVERLOAD(^);
+        DEFINE_COMPLEX_OVERLOAD(<<);
+        DEFINE_COMPLEX_OVERLOAD(>>);
+        DEFINE_COMPLEX_OVERLOAD(<);
+        DEFINE_COMPLEX_OVERLOAD(<=);
+        DEFINE_COMPLEX_OVERLOAD(>);
+        DEFINE_COMPLEX_OVERLOAD(>=);
+        DEFINE_COMPLEX_OVERLOAD(==);
+        DEFINE_COMPLEX_OVERLOAD(!=);
 
         UNARY_OPERATOR_FUNCTOR(identity, +);
         UNARY_OPERATOR_FUNCTOR(negate, -);
@@ -74,21 +109,21 @@ namespace xt
         BINARY_OPERATOR_FUNCTOR(multiplies, *);
         BINARY_OPERATOR_FUNCTOR(divides, /);
         BINARY_OPERATOR_FUNCTOR(modulus, %);
-        BINARY_BOOL_OPERATOR_FUNCTOR(logical_or, ||);
-        BINARY_BOOL_OPERATOR_FUNCTOR(logical_and, &&);
-        UNARY_BOOL_OPERATOR_FUNCTOR(logical_not, !);
+        BINARY_OPERATOR_FUNCTOR(logical_or, ||);
+        BINARY_OPERATOR_FUNCTOR(logical_and, &&);
+        UNARY_OPERATOR_FUNCTOR(logical_not, !);
         BINARY_OPERATOR_FUNCTOR(bitwise_or, |);
         BINARY_OPERATOR_FUNCTOR(bitwise_and, &);
         BINARY_OPERATOR_FUNCTOR(bitwise_xor, ^);
         UNARY_OPERATOR_FUNCTOR(bitwise_not, ~);
         BINARY_OPERATOR_FUNCTOR(left_shift, <<);
         BINARY_OPERATOR_FUNCTOR(right_shift, >>);
-        BINARY_BOOL_OPERATOR_FUNCTOR(less, <);
-        BINARY_BOOL_OPERATOR_FUNCTOR(less_equal, <=);
-        BINARY_BOOL_OPERATOR_FUNCTOR(greater, >);
-        BINARY_BOOL_OPERATOR_FUNCTOR(greater_equal, >=);
-        BINARY_BOOL_OPERATOR_FUNCTOR(equal_to, ==);
-        BINARY_BOOL_OPERATOR_FUNCTOR(not_equal_to, !=);
+        BINARY_OPERATOR_FUNCTOR(less, <);
+        BINARY_OPERATOR_FUNCTOR(less_equal, <=);
+        BINARY_OPERATOR_FUNCTOR(greater, >);
+        BINARY_OPERATOR_FUNCTOR(greater_equal, >=);
+        BINARY_OPERATOR_FUNCTOR(equal_to, ==);
+        BINARY_OPERATOR_FUNCTOR(not_equal_to, !=);
 
         struct conditional_ternary
         {
@@ -178,11 +213,7 @@ namespace xt
     }
 
 #undef UNARY_OPERATOR_FUNCTOR
-#undef UNARY_BOOL_OPERATOR_FUNCTOR
-#undef UNARY_OPERATOR_FUNCTOR_IMPL
 #undef BINARY_OPERATOR_FUNCTOR
-#undef BINARY_BOOL_OPERATOR_FUNCTOR
-#undef BINARY_OPERATOR_FUNCTOR_IMPL
 
     /*************
      * operators *
@@ -870,20 +901,6 @@ namespace xt
 
     /**
      * @ingroup logical_operators
-     * @brief return indices that are non-zero in the flattened version of arr,
-     * equivalent to nonzero(ravel<layout_type>(arr))[0];
-     *
-     * @param arr input array
-     * @return indices that are non-zero in the flattened version of arr
-     */
-    template <layout_type L, class T>
-    inline auto flatnonzero(const T& arr)
-    {
-        return nonzero(ravel<L>(arr))[0];
-    }
-
-    /**
-     * @ingroup logical_operators
      * @brief return vector of indices where condition is true
      *        (equivalent to \a nonzero(condition))
      *
@@ -983,6 +1000,7 @@ namespace xt
     {
         return detail::make_xfunction<typename detail::cast<R>::functor>(std::forward<E>(e));
     }
+
 }
 
 #endif

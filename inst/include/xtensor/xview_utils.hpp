@@ -1,5 +1,6 @@
 /***************************************************************************
-* Copyright (c) 2016, Johan Mabille, Sylvain Corlay and Wolf Vollprecht    *
+* Copyright (c) Johan Mabille, Sylvain Corlay and Wolf Vollprecht          *
+* Copyright (c) QuantStack                                                 *
 *                                                                          *
 * Distributed under the terms of the BSD 3-Clause License.                 *
 *                                                                          *
@@ -100,7 +101,7 @@ namespace xt
         {
             static constexpr std::size_t count(std::size_t i) noexcept
             {
-                return i ? (integral_count_impl<S...>::count(i - 1) + (std::is_integral<std::remove_reference_t<T>>::value ? 1 : 0)) : 0;
+                return i ? (integral_count_impl<S...>::count(i - 1) + (xtl::is_integral<std::remove_reference_t<T>>::value ? 1 : 0)) : 0;
             }
         };
 
@@ -193,7 +194,7 @@ namespace xt
             static constexpr std::size_t count_impl(std::size_t i) noexcept
             {
                 return 1 + (
-                    std::is_integral<std::remove_reference_t<T>>::value ?
+                    xtl::is_integral<std::remove_reference_t<T>>::value ?
                     integral_skip_impl<S...>::count(i) :
                     integral_skip_impl<S...>::count(i - 1)
                     );
@@ -201,7 +202,7 @@ namespace xt
 
             static constexpr std::size_t count_impl() noexcept
             {
-                return std::is_integral<std::remove_reference_t<T>>::value ? 1 + integral_skip_impl<S...>::count(0) : 0;
+                return xtl::is_integral<std::remove_reference_t<T>>::value ? 1 + integral_skip_impl<S...>::count(0) : 0;
             }
         };
 

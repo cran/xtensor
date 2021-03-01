@@ -1,6 +1,6 @@
 /***************************************************************************
-* Copyright (c) 2017, Johan Mabille, Sylvain Corlay, Wolf Vollprecht and   *
-* Martin Renou                                                             *
+* Copyright (c) Johan Mabille, Sylvain Corlay and Wolf Vollprecht          *
+* Copyright (c) QuantStack                                                 *
 *                                                                          *
 * Distributed under the terms of the BSD 3-Clause License.                 *
 *                                                                          *
@@ -116,6 +116,8 @@ namespace xt
         using size_type = typename inner_types::size_type;
         using difference_type = typename data_type::difference_type;
 
+        using bool_load_type = xtl::xmasked_value<typename data_type::bool_load_type, mask_type>;
+
         using shape_type = typename data_type::shape_type;
         using strides_type = typename data_type::strides_type;
 
@@ -158,6 +160,8 @@ namespace xt
         template <class D, class M>
         xmasked_view(D&& data, M&& mask);
 
+        xmasked_view(xmasked_view const&) = default;
+
         size_type size() const noexcept;
         const inner_shape_type& shape() const noexcept;
         const inner_strides_type& strides() const noexcept;
@@ -166,6 +170,7 @@ namespace xt
         using accessible_base::shape;
 
         layout_type layout() const noexcept;
+        bool is_contiguous() const noexcept;
 
         template <class T>
         void fill(const T& value);
@@ -193,6 +198,9 @@ namespace xt
         template <class It>
         const_reference element(It first, It last) const;
 
+        template <class S>
+        bool has_linear_assign(const S& strides) const noexcept;
+
         data_type& value() noexcept;
         const data_type& value() const noexcept;
 
@@ -217,6 +225,8 @@ namespace xt
         const_stepper stepper_begin(const S& shape) const noexcept;
         template <class S>
         const_stepper stepper_end(const S& shape, layout_type l) const noexcept;
+
+        self_type& operator=(const self_type& rhs);
 
         template <class E>
         self_type& operator=(const xexpression<E>& e);
@@ -358,6 +368,12 @@ namespace xt
         return m_data.layout();
     }
 
+    template <class CTD, class CTM>
+    inline bool xmasked_view<CTD, CTM>::is_contiguous() const noexcept
+    {
+        return false;
+    }
+
     /**
      * Fills the data with the given value.
      * @param value the value to fill the data with.
@@ -480,6 +496,13 @@ namespace xt
     }
     //@}
 
+    template <class CTD, class CTM>
+    template <class S>
+    inline bool xmasked_view<CTD, CTM>::has_linear_assign(const S& strides) const noexcept
+    {
+        return m_data.has_linear_assign(strides) && m_mask.has_linear_assign(strides);
+    }
+
     /**
      * Return an expression for the values of the xmasked_view.
      */
@@ -542,6 +565,13 @@ namespace xt
     inline auto xmasked_view<CTD, CTM>::stepper_end(const S& shape, layout_type l) const noexcept -> const_stepper
     {
         return const_stepper(value().stepper_end(shape, l), visible().stepper_end(shape, l));
+    }
+
+    template <class CTD, class CTM>
+    inline auto xmasked_view<CTD, CTM>::operator=(const self_type& rhs) -> self_type&
+    {
+        temporary_type tmp(rhs);
+        return this->assign_temporary(std::move(tmp));
     }
 
     template <class CTD, class CTM>

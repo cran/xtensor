@@ -1,5 +1,6 @@
 /***************************************************************************
-* Copyright (c) 2016, Sylvain Corlay and Johan Mabille                     *
+* Copyright (c) Sylvain Corlay and Johan Mabille and Wolf Vollprecht       *
+* Copyright (c) QuantStack                                                 *
 *                                                                          *
 * Distributed under the terms of the BSD 3-Clause License.                 *
 *                                                                          *
@@ -139,10 +140,22 @@ namespace xtl
             }
         }
 
+        /// C++17 equivalent of clear
+        void reset() noexcept
+        {
+            clear();
+        }
+
         /// Returns true if *this has no contained object, otherwise false.
         bool empty() const noexcept
         {
             return this->vtable == nullptr;
+        }
+
+        /// C++17 equivalent of !empty()
+        bool has_value() const noexcept
+        {
+            return !empty();
         }
 
         /// If *this has a contained object of type T, typeid(T); otherwise typeid(void).

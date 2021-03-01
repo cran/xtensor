@@ -1,5 +1,7 @@
 /***************************************************************************
-* Copyright (c) 2016, Johan Mabille and Sylvain Corlay                     *
+* Copyright (c) Johan Mabille, Sylvain Corlay, Wolf Vollprecht and         *
+* Martin Renou                                                             *
+* Copyright (c) QuantStack                                                 *
 *                                                                          *
 * Distributed under the terms of the BSD 3-Clause License.                 *
 *                                                                          *
@@ -72,7 +74,12 @@ namespace xsimd
 
     private:
 
+        template <class... Args>
+        batch_bool<T, N>& load_values(Args... args);
+        
         std::array<bool, N> m_value;
+
+        friend class simd_batch_bool<batch_bool<T, N>>;
     };
 
     /***************
@@ -97,6 +104,7 @@ namespace xsimd
         using self_type = batch<T, N>;
         using base_type = simd_batch<self_type>;
         using storage_type = typename base_type::storage_type;
+        using batch_bool_type = typename base_type::batch_bool_type;
 
         batch();
         explicit batch(T f);
@@ -115,7 +123,10 @@ namespace xsimd
         batch(const T* src, aligned_mode);
         batch(const T* src, unaligned_mode);
         batch(const std::array<T, N>& rhs);
+        batch(const batch_bool_type& rhs);
         batch& operator=(const std::array<T, N>& rhs);
+        batch& operator=(const std::array<bool, N>& rhs);
+        batch& operator=(const batch_bool_type&);
 
         operator std::array<T, N>() const;
 
@@ -480,6 +491,14 @@ namespace xsimd
         return m_value;
     }
 
+    template <typename T, std::size_t N>
+    template <class... Args>
+    inline batch_bool<T, N>& batch_bool<T, N>::load_values(Args... args)
+    {
+        m_value = std::array<bool, N>({args...});
+        return *this;
+    }
+
     namespace detail
     {
         template <class T, std::size_t N>
@@ -625,9 +644,33 @@ namespace xsimd
     }
 
     template <typename T, std::size_t N>
+    inline batch<T, N>::batch(const batch_bool_type& rhs)
+    {
+        std::transform(rhs.get_value().cbegin(), rhs.get_value().cend(), this->m_value.begin(),
+                       [](bool b) -> T { return b ? T(1) : T(0); });
+    }
+
+    template <typename T, std::size_t N>
     inline batch<T, N>& batch<T, N>::operator=(const std::array<T, N>& rhs)
     {
         this->m_value = rhs;
+        return *this;
+    }
+
+    template <typename T, std::size_t N>
+    inline batch<T, N>& batch<T, N>::operator=(const std::array<bool, N>& rhs)
+    {
+        using all_bits = detail::all_bits<std::is_integral<T>::value>;
+        std::transform(rhs.cbegin(), rhs.cend(), this->m_value.begin(),
+                       [](bool b) -> T { return b ? all_bits::get(T(0)) : T(0); });
+        return *this;
+    }
+
+    template <typename T, std::size_t N>
+    inline batch<T, N>& batch<T, N>::operator=(const batch_bool_type& rhs)
+    {
+        std::transform(rhs.get_value().cbegin(), rhs.get_value().cend(), this->m_value.begin(),
+                       [](bool b) -> T { return b ? T(1) : T(0); });
         return *this;
     }
 
@@ -659,6 +702,7 @@ namespace xsimd
         this->store_unaligned_impl(dst);                             \
     }
 
+    FALLBACK_DEFINE_LOAD_STORE(bool)
     FALLBACK_DEFINE_LOAD_STORE(int8_t)
     FALLBACK_DEFINE_LOAD_STORE(uint8_t)
     FALLBACK_DEFINE_LOAD_STORE(int16_t)

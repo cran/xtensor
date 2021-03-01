@@ -1,5 +1,6 @@
 /***************************************************************************
-* Copyright (c) 2016, Johan Mabille, Sylvain Corlay and Wolf Vollprecht    *
+* Copyright (c) Johan Mabille, Sylvain Corlay and Wolf Vollprecht          *
+* Copyright (c) QuantStack                                                 *
 *                                                                          *
 * Distributed under the terms of the BSD 3-Clause License.                 *
 *                                                                          *
@@ -18,6 +19,7 @@
 
 #include "xexception.hpp"
 #include "xshape.hpp"
+#include "xtensor_config.hpp"
 #include "xtensor_forward.hpp"
 
 namespace xt
@@ -162,7 +164,7 @@ namespace xt
     template <class shape_type>
     inline std::size_t compute_size(const shape_type& shape) noexcept
     {
-        return detail::compute_size_impl(shape, std::is_signed<std::decay_t<typename std::decay_t<shape_type>::value_type>>());
+        return detail::compute_size_impl(shape, xtl::is_signed<std::decay_t<typename std::decay_t<shape_type>::value_type>>());
     }
 
     namespace detail
@@ -454,7 +456,7 @@ namespace xt
     {
         if (l != layout_type::row_major && l != layout_type::column_major)
         {
-            throw std::runtime_error("unravel_index: dynamic layout not supported");
+            XTENSOR_THROW(std::runtime_error, "unravel_index: dynamic layout not supported");
         }
         return detail::unravel_noexcept(index, strides, l);
     }

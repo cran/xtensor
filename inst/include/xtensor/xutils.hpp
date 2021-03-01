@@ -1,5 +1,6 @@
 /***************************************************************************
-* Copyright (c) 2016, Johan Mabille, Sylvain Corlay and Wolf Vollprecht    *
+* Copyright (c) Johan Mabille, Sylvain Corlay and Wolf Vollprecht          *
+* Copyright (c) QuantStack                                                 *
 *                                                                          *
 * Distributed under the terms of the BSD 3-Clause License.                 *
 *                                                                          *
@@ -16,6 +17,7 @@
 #include <cstddef>
 #include <initializer_list>
 #include <iostream>
+#include <memory>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -105,7 +107,7 @@ namespace xt
     };
 
     template <class T, class R>
-    using disable_integral_t = std::enable_if_t<!std::is_integral<T>::value, R>;
+    using disable_integral_t = std::enable_if_t<!xtl::is_integral<T>::value, R>;
 
     /********************************
      * meta identity implementation *
@@ -199,6 +201,8 @@ namespace xt
      * accumulate implementation *
      *****************************/
 
+    /// @cond DOXYGEN_INCLUDE_NOEXCEPT
+
     namespace detail
     {
         template <std::size_t I, class F, class R, class... T>
@@ -224,6 +228,8 @@ namespace xt
     {
         return detail::accumulate_impl<0, F, R, T...>(std::forward<F>(f), init, t);
     }
+
+    /// @endcond
 
     /***************************
      * argument implementation *
@@ -359,8 +365,8 @@ namespace xt
     }
 
     template <class E, class C>
-    inline std::enable_if_t<!std::is_integral<std::decay_t<C>>::value &&
-                     std::is_signed<typename std::decay_t<C>::value_type>::value,
+    inline std::enable_if_t<!xtl::is_integral<std::decay_t<C>>::value &&
+                     xtl::is_signed<typename std::decay_t<C>::value_type>::value,
                      rebind_container_t<std::size_t, std::decay_t<C>>>
     normalize_axis(E& expr, C&& axes)
     {
@@ -378,7 +384,7 @@ namespace xt
     }
 
     template <class C, class E>
-    inline std::enable_if_t<!std::is_integral<std::decay_t<C>>::value && std::is_unsigned<typename std::decay_t<C>::value_type>::value, C&&>
+    inline std::enable_if_t<!xtl::is_integral<std::decay_t<C>>::value && std::is_unsigned<typename std::decay_t<C>::value_type>::value, C&&>
     normalize_axis(E& expr, C&& axes)
     {
         static_cast<void>(expr);
@@ -388,7 +394,7 @@ namespace xt
 
     template <class R, class E, class C>
     inline auto forward_normalize(E& expr, C&& axes)
-        -> std::enable_if_t<std::is_signed<std::decay_t<decltype(*std::begin(axes))>>::value, R>
+        -> std::enable_if_t<xtl::is_signed<std::decay_t<decltype(*std::begin(axes))>>::value, R>
     {
         R res;
         xt::resize_container(res, xtl::sequence_size(axes));
@@ -404,7 +410,7 @@ namespace xt
 
     template <class R, class E, class C>
     inline auto forward_normalize(E& expr, C&& axes)
-        -> std::enable_if_t<!std::is_signed<std::decay_t<decltype(*std::begin(axes))>>::value && !std::is_same<R, std::decay_t<C>>::value, R>
+        -> std::enable_if_t<!xtl::is_signed<std::decay_t<decltype(*std::begin(axes))>>::value && !std::is_same<R, std::decay_t<C>>::value, R>
     {
         static_cast<void>(expr);
 
@@ -417,7 +423,7 @@ namespace xt
 
     template <class R, class E, class C>
     inline auto forward_normalize(E& expr, C&& axes)
-        -> std::enable_if_t<!std::is_signed<std::decay_t<decltype(*std::begin(axes))>>::value && std::is_same<R, std::decay_t<C>>::value, R&&>
+        -> std::enable_if_t<!xtl::is_signed<std::decay_t<decltype(*std::begin(axes))>>::value && std::is_same<R, std::decay_t<C>>::value, R&&>
     {
         static_cast<void>(expr);
         XTENSOR_ASSERT(std::all_of(std::begin(axes), std::end(axes), [&expr](auto ax_el) { return ax_el < expr.dimension(); }));
@@ -596,11 +602,49 @@ namespace xt
     {
     };
 
+    template <class E, class = void>
+    struct has_iterator_interface : std::false_type
+    {
+    };
+
+    template <class E>
+    struct has_iterator_interface<E, void_t<decltype(std::declval<E>().begin())>>
+        : std::true_type
+    {
+    };
+
+    /******************************
+     * is_iterator implementation *
+     ******************************/
+
+    template <class E, class = void>
+    struct is_iterator : std::false_type
+    {
+    };
+
+    template <class E>
+    struct is_iterator<E, void_t<decltype(
+        *std::declval<const E>(),
+        std::declval<const E>() == std::declval<const E>(),
+        std::declval<const E>() != std::declval<const E>(),
+        ++ (*std::declval<E*>()),
+        (*std::declval<E*>()) ++,
+        std::true_type())>>
+        : std::true_type
+    {
+    };
+
     /********************************************
      * xtrivial_default_construct implemenation *
      ********************************************/
 
-#if !defined(__GNUG__) || defined(_LIBCPP_VERSION) || defined(_GLIBCXX_USE_CXX11_ABI)
+#if defined(_GLIBCXX_USE_CXX11_ABI)
+#if _GLIBCXX_USE_CXX11_ABI || (defined(_GLIBCXX_USE_DUAL_ABI) && !_GLIBCXX_USE_DUAL_ABI)
+#define XTENSOR_GLIBCXX_USE_CXX11_ABI 1
+#endif
+#endif
+
+#if !defined(__GNUG__) || defined(_LIBCPP_VERSION) || defined(XTENSOR_GLIBCXX_USE_CXX11_ABI)
 
     template <class T>
     using xtrivially_default_constructible = std::is_trivially_default_constructible<T>;
@@ -611,6 +655,7 @@ namespace xt
     using xtrivially_default_constructible = std::has_trivial_default_constructor<T>;
 
 #endif
+#undef XTENSOR_GLIBCXX_USE_CXX11_ABI
 
     /*************************
      * conditional type cast *
@@ -702,7 +747,9 @@ namespace xt
                 }
                 else if (P == alloc_tracking::assert)
                 {
-                    throw std::runtime_error("xtensor allocation of " + std::to_string(n) + " elements detected");
+                    XTENSOR_THROW(std::runtime_error,
+                                  "xtensor allocation of " + std::to_string(n) +
+                                  " elements detected");
                 }
             }
             return base_type::allocate(n);
@@ -715,7 +762,8 @@ namespace xt
         template <class U>
         struct rebind
         {
-            using other = tracking_allocator<U, typename A::template rebind<U>::other, P>;
+            using traits = std::allocator_traits<A>;
+            using other = tracking_allocator<U, typename traits::template rebind_alloc<U>, P>;
         };
     };
 
@@ -753,7 +801,8 @@ namespace xt
     template <class X, template <class, class> class C, class T, class A>
     struct rebind_container<X, C<T, A>>
     {
-        using allocator = typename A::template rebind<X>::other;
+        using traits = std::allocator_traits<A>;
+        using allocator = typename traits::template rebind_alloc<X>;
         using type = C<X, allocator>;
     };
 
@@ -808,6 +857,49 @@ namespace xt
 
     template <class ST>
     using inner_reference_t = typename inner_reference<ST>::type;
+
+    /************
+     * get_rank *
+     ************/
+
+    template <class E, typename = void>
+    struct get_rank
+    {
+        constexpr static std::size_t value = SIZE_MAX;
+    };
+
+    template <class E>
+    struct get_rank<E, decltype((void)E::rank, void())>
+    {
+        constexpr static std::size_t value= E::rank;
+    };
+
+    /******************
+     * has_fixed_rank *
+     ******************/
+
+    template <class E>
+    struct has_fixed_rank
+    {
+        using type = std::integral_constant<bool, get_rank<std::decay_t<E>>::value != SIZE_MAX>;
+    };
+
+    template <class E>
+    using has_fixed_rank_t = typename has_fixed_rank<std::decay_t<E>>::type;
+
+    /************
+     * has_rank *
+     ************/
+
+    template <class E, size_t N>
+    struct has_rank
+    {
+        using type = std::integral_constant<bool, get_rank<std::decay_t<E>>::value == N>;
+    };
+
+    template <class E, size_t N>
+    using has_rank_t = typename has_rank<std::decay_t<E>, N>::type;
+
 }
 
 #endif
